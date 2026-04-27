@@ -82,23 +82,24 @@ remediation.
 
 ## Smell Catalog (quick reference)
 
-| #   | Smell                         | One-line test                                                                          |
-| --- | ----------------------------- | -------------------------------------------------------------------------------------- |
-| G1  | **Receiver Monolith**         | One named type's effective method set (incl. promoted) is ≥15 across ≥3 concerns       |
-| G1B | **Decomposition Theatre**     | 3+ type aliases in one package all resolving to a single underlying struct             |
-| G1C | **Aggregate Holder**          | A struct with 5+ same-package sub-service fields whose pointee method count totals ≥25 |
-| G1D | **Hidden Holder**             | Thin holder + ≥3 pointer-keyed registry maps + ≥5 exported `*Holder` accessors         |
-| G2  | **Stutter Names**             | Exported type/function repeats the package name (`lanes.LaneConfig`)                   |
-| G3  | **Build-Tag Pair Sprawl**     | >2 paired files conditioned by build tags (`*_stub.go` / `*_cgo.go`) in one dir        |
-| G4  | **God Dependency Bag**        | A `Deps`/`Container` struct mixes >8 unrelated dependency types                        |
-| G5  | **Mixed-Concern File**        | A single file holds 3+ unrelated decl groups (types + validation + utilities)          |
-| G6  | **Facade Method**             | Any method whose body is a thin pass-through (≤3 lines) to a subpackage function       |
-| G7  | **Init Coupling**             | Multiple `func init()` in a package with cross-file ordering dependencies              |
-| G8  | **Internal Re-Export Tunnel** | A package's only role is to re-export from a deeper package (TS pattern, wrong here)   |
-| G9  | **Prefix Cluster**            | 3+ files share a name prefix in a flat directory                                       |
-| G10 | **Shadow Suffix**             | File names ending in `_helpers`, `_utils`, `_handlers`, `_actions`, `_responses`       |
-| G11 | **Junk Drawer**               | File named `helpers.go` / `utils.go` / `common.go` / `misc.go` with mixed contents     |
-| G12 | **Premature Package**         | A directory containing only 1 source file (excluding tests, doc, generated)            |
+| #   | Smell                         | One-line test                                                                                                                                                                    |
+| --- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1  | **Receiver Monolith**         | One named type's effective method set (incl. promoted) is ≥15 across ≥3 concerns                                                                                                 |
+| G1B | **Decomposition Theatre**     | 3+ type aliases in one package all resolving to a single underlying struct                                                                                                       |
+| G1C | **Aggregate Holder**          | A struct with 5+ same-package sub-service fields whose pointee method count totals ≥25                                                                                           |
+| G1D | **Hidden Holder**             | Thin holder + ≥3 pointer-keyed registry maps + ≥5 exported `*Holder` accessors                                                                                                   |
+| —   | **Reach-Through Holder**      | _No structural detector._ Caller-view test only: production callers take `*GodType` and reach in via accessors. The implementation passes every detector; the consumer is wrong. |
+| G2  | **Stutter Names**             | Exported type/function repeats the package name (`lanes.LaneConfig`)                                                                                                             |
+| G3  | **Build-Tag Pair Sprawl**     | >2 paired files conditioned by build tags (`*_stub.go` / `*_cgo.go`) in one dir                                                                                                  |
+| G4  | **God Dependency Bag**        | A `Deps`/`Container` struct mixes >8 unrelated dependency types                                                                                                                  |
+| G5  | **Mixed-Concern File**        | A single file holds 3+ unrelated decl groups (types + validation + utilities)                                                                                                    |
+| G6  | **Facade Method**             | Any method whose body is a thin pass-through (≤3 lines) to a subpackage function                                                                                                 |
+| G7  | **Init Coupling**             | Multiple `func init()` in a package with cross-file ordering dependencies                                                                                                        |
+| G8  | **Internal Re-Export Tunnel** | A package's only role is to re-export from a deeper package (TS pattern, wrong here)                                                                                             |
+| G9  | **Prefix Cluster**            | 3+ files share a name prefix in a flat directory                                                                                                                                 |
+| G10 | **Shadow Suffix**             | File names ending in `_helpers`, `_utils`, `_handlers`, `_actions`, `_responses`                                                                                                 |
+| G11 | **Junk Drawer**               | File named `helpers.go` / `utils.go` / `common.go` / `misc.go` with mixed contents                                                                                               |
+| G12 | **Premature Package**         | A directory containing only 1 source file (excluding tests, doc, generated)                                                                                                      |
 
 For each smell, see the detection criteria, examples, and
 remediation guidance below.
@@ -222,6 +223,61 @@ first argument, and a holder type with ≤2 of its own methods. The
 fix is the same as for G1C, plus delete the registries: typed fields
 on the holder where the field types live in subpackages, callers
 take the narrow sub-service.
+
+### Reach-Through Holder (no detector — caller-view test only)
+
+```go
+// typedbstore/store.go — STRUCTURALLY clean.
+type TypeDB struct {
+    conn   *typedbconn.Conn
+    nodes  *nodestore.Mutator   // typed cross-package field — passes G1C
+    search *searchstore.Searcher
+    backup *Backup
+    // ...
+}
+
+// And clean accessors:
+func SearchOps(t *TypeDB) *searchstore.Searcher { return t.search }
+func BackupOps(t *TypeDB) *Backup               { return t.backup }
+```
+
+```go
+// service/projectbackup/service.go — but here:
+func restoreGraphBundle(ctx context.Context, tdb *typedbstore.TypeDB, projectID string, bundle *Bundle) error {
+    if err := typedbstore.BackupOps(tdb).InsertNodesWithDisplayIDs(...); err != nil { ... }
+    if err := typedbstore.BackupOps(tdb).InsertEdgesWithAttributes(...); err != nil { ... }
+    if err := typedbstore.BackupOps(tdb).InsertPendingPromotions(...); err != nil { ... }
+}
+```
+
+The fifth disguise, and the one no detector currently catches. The
+implementation is genuinely decomposed — sub-services live in
+subpackages, the holder has clean typed cross-package fields,
+accessors return the right narrow types, all the structural
+detectors (G1, G1B, G1C, G1D) report zero findings on the holder's
+package. **And yet `*TypeDB` is still the chokepoint** because
+every consumer takes `*TypeDB` and reaches in via the accessors at
+each call site. The accessors that were a fine internal helper (one
+line, return a field) become the implementation of a god-type API
+when called from the outside.
+
+There is no purely structural detector for this shape: the
+implementation is correct; the _consumer_ is wrong. The only test
+that catches it is the caller-view grep:
+
+```bash
+grep -rnE '\*<GodType>\b' --include='*.go' internal/ cmd/ | grep -v _test.go
+```
+
+Acceptable matches: the constructor, a `Close`/teardown helper,
+test fixtures (`testutil/`, `testdata/`), and `*_test.go`. Anything
+else is a Reach-Through Holder caller and the ticket is not done.
+
+The fix: each consumer takes the specific narrow sub-service it
+actually uses (`*searchstore.Searcher`, `*typedbstore.Backup`, …).
+The constructor returns these as separate values; the holder, if it
+survives at all, is constructed once and never reaches a non-test
+function signature.
 
 ## Spirit, Not Letter
 
