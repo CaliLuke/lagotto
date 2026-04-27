@@ -26,9 +26,10 @@ the author wrote before starting.
 
 ## Catalog
 
-| File                                           | Status  | Summary                                                             |
-| ---------------------------------------------- | ------- | ------------------------------------------------------------------- |
-| [g1e-foreign-holder.md](g1e-foreign-holder.md) | planned | Detector for the Reach-Through Holder pattern (consumer-side smell) |
+| File                                                       | Status  | Summary                                                             |
+| ---------------------------------------------------------- | ------- | ------------------------------------------------------------------- |
+| [g1e-foreign-holder.md](g1e-foreign-holder.md)             | planned | Detector for the Reach-Through Holder pattern (consumer-side smell) |
+| [feat-cmd-internal-layout.md](feat-cmd-internal-layout.md) | planned | Restructure repo into the conventional cmd/ + internal/ Go layout   |
 
 Add new entries here when adding files; remove when the file is
 deleted at merge.
