@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Restructured the repo into `cmd/lagotto/` + `internal/` layout
+  (`internal/audit`, `internal/pkgload`, `internal/version`,
+  `internal/detect`). No behavior change; everything compiles and
+  audits identically. The release ldflag target moves from
+  `main.version` to
+  `github.com/CaliLuke/lagotto/internal/version.Version`.
+
 ## [0.1.0] - 2026-04-26
 
 ### Added

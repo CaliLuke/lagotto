@@ -50,7 +50,7 @@ go test -race -count=1 ./...
 report "go test -race" $?
 
 printf '\n--- self-audit ---\n'
-go build -o /tmp/lagotto-selfcheck . && \
+go build -o /tmp/lagotto-selfcheck ./cmd/lagotto && \
   /tmp/lagotto-selfcheck audit --format=text . | tee /tmp/lagotto-selfcheck.out && \
   ! grep -q "^\[" /tmp/lagotto-selfcheck.out
 report "lagotto on lagotto" $?

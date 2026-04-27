@@ -8,14 +8,14 @@ before:
 
 builds:
   - id: lagotto
-    main: .
+    main: ./cmd/lagotto
     binary: lagotto
     env:
       - CGO_ENABLED=0
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X main.version={{.Version}}
+      - -s -w -X github.com/CaliLuke/lagotto/internal/version.Version={{.Version}}
     goos:
       - darwin
       - linux
