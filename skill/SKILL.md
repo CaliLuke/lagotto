@@ -87,6 +87,7 @@ remediation.
 | G1  | **Receiver Monolith**         | One named type's effective method set (incl. promoted) is ≥15 across ≥3 concerns       |
 | G1B | **Decomposition Theatre**     | 3+ type aliases in one package all resolving to a single underlying struct             |
 | G1C | **Aggregate Holder**          | A struct with 5+ same-package sub-service fields whose pointee method count totals ≥25 |
+| G1D | **Hidden Holder**             | Thin holder + ≥3 pointer-keyed registry maps + ≥5 exported `*Holder` accessors         |
 | G2  | **Stutter Names**             | Exported type/function repeats the package name (`lanes.LaneConfig`)                   |
 | G3  | **Build-Tag Pair Sprawl**     | >2 paired files conditioned by build tags (`*_stub.go` / `*_cgo.go`) in one dir        |
 | G4  | **God Dependency Bag**        | A `Deps`/`Container` struct mixes >8 unrelated dependency types                        |
@@ -183,7 +184,7 @@ type TypeDB struct {
 ```
 
 A single embedded same-package struct contributes most of the
-outer type's method set. Lagotto's G1 detector now reports
+outer type's method set. Lagotto's G1 detector reports
 `evidence.promoted_from` on the outer type and adds a hint when
 
 > 50% of methods come from one embedded same-package type.
@@ -191,29 +192,160 @@ outer type's method set. Lagotto's G1 detector now reports
 > real sub-services in subpackages, update callers. File moves do
 > not fix it.
 
+### G1D — Hidden Holder via Registry
+
+```go
+type TypeDB struct{ conn *Conn }  // "narrow" — no methods, one field
+
+var (
+    nodeReg   sync.Map // map[*TypeDB]*Mutator
+    edgeReg   sync.Map
+    searchReg sync.Map
+    threadReg sync.Map
+    promoReg  sync.Map
+)
+
+func Nodes(t *TypeDB) *Mutator { v, _ := nodeReg.Load(t); return v.(*Mutator) }
+func Edges(t *TypeDB) *Mutator { v, _ := edgeReg.Load(t); return v.(*Mutator) }
+// ... etc.
+```
+
+The third disguise. After aliases (G1B) and aggregate holders (G1C)
+stop fooling the auditor, the next move is to keep the holder type
+narrow on paper while reconstructing its API surface via package-
+level `sync.Map` registries keyed by the holder's pointer. Every
+caller still receives `*TypeDB`. The chokepoint is unchanged.
+
+Lagotto's G1D detector flags any package with ≥3 pointer-keyed
+registry maps, ≥5 exported accessors taking `*Holder` as their
+first argument, and a holder type with ≤2 of its own methods. The
+fix is the same as for G1C, plus delete the registries: typed fields
+on the holder where the field types live in subpackages, callers
+take the narrow sub-service.
+
+## Spirit, Not Letter
+
+Three escapes in one refactor cycle (aliases → aggregate holder →
+registry maps) is not a coincidence. Any specific structural metric,
+once written into a spec or detector, becomes the thing the system
+optimizes for — which usually means _routing around_ it rather than
+satisfying the underlying intent. This is Goodhart's Law applied to
+code metrics, and it has a predictable shape:
+
+1. The spec says "delete every method on `*God`."
+2. An agent finds a structural shape that satisfies the literal rule
+   while preserving the original problem (the god type as a
+   chokepoint every consumer takes).
+3. The detector grows a new rule (G1B, G1C, G1D, …).
+4. The next agent finds the next shape.
+
+Each new detector raises the floor, but detectors will always lag
+behind invention. The systemic answer is to specify the _target end
+state_ rather than the structural metric:
+
+| Bad (lettered) spec                             | Good (spirited) spec                                                                                                                                      |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Delete every method on `*God`."                | "No production caller takes `*God`. Each consumer takes only the narrow sub-service interface it uses."                                                   |
+| "`*God` has zero fields of same-package types." | "Sub-service types live in subpackages. The holder, if it survives, returns sub-services from its constructor — it does not appear in caller signatures." |
+| "Move methods into subpackages."                | "Each consumer's source file imports a sub-service package directly; the package graph reflects the decomposition."                                       |
+
+The spirited spec leaves no room for evasion because any disguise
+that preserves `*God` in caller signatures fails the spec by
+construction. The lettered spec asks for a measurable surface that
+agents will always find a clever way to provide.
+
+### How to write a spirited refactor spec
+
+When writing a layout-refactor ticket:
+
+1. **Lead with the caller's view.** "After this ticket lands,
+   `grep -rn '\*<GodType>' --include='*.go'` returns matches only
+   in the constructor, test fixtures, and at most a teardown helper."
+   That sentence is harder to evade than any structural rule.
+2. **Name the target packages.** "Each sub-service moves into its
+   own subpackage at `<pkg>/<concern>/`. The constructor returns
+   them as separate values."
+3. **Describe the consumer migration.** "Each handler in
+   `transport/...` takes the narrow interface from the matching
+   subpackage; the omnibus type does not appear in any handler
+   signature."
+4. **State that all G1\* detectors must pass**, then add: "and the
+   reviewer agent confirms the caller-view test from rule 1." The
+   detectors are diagnostics; the caller-view test is the gate.
+5. **Mandate verification by a different agent.** No layout ticket
+   is complete until a second agent (reviewer, with no access to
+   the implementer's reasoning) runs the verification checklist
+   below and reports zero blockers. The implementer cannot sign off
+   on their own work; the separation breaks self-rationalization.
+
+### What to do when you find the next disguise
+
+If you encounter a refactor that satisfies every existing rule and
+still feels like the god type is intact:
+
+1. **Write down the caller-view test** that fails. ("Every transport
+   handler still takes `*TypeDB`." That single sentence is the
+   evidence.) Send the implementer back with that test, not a list
+   of structural complaints.
+2. **Open a lagotto issue** describing the new evasion shape. Even
+   if you don't implement the detector now, the issue raises the
+   floor for the next person who tries the same shape.
+3. **Update this skill's anti-patterns section.** Each new disguise
+   that survives belongs in the catalog above, with a fix.
+
+The detectors are the artifact. The discipline of describing intent
+and verifying with a separate agent is what stops the next iteration.
+
 ## Verifying A True Decomposition
 
-Before accepting a "T1 done" report, confirm all of:
+The first check below is the spirit of the spec. The rest are
+diagnostic confirmations. If the first check fails, the work is
+incomplete regardless of how clean the lagotto output looks.
 
-1. **Effective method set shrinks.** Run lagotto. The original
-   monolith's name should no longer appear under G1, G1B, or G1C.
-   If you want to verify directly, use `go/types`:
+1. **The god type does not appear in production caller signatures.**
+   This is the spec, not a structural rule.
+
+   ```bash
+   grep -rnE '\*<GodType>\b' --include='*.go' | grep -v _test.go
+   ```
+
+   Matches must be confined to the package that defines the type,
+   the constructor, and at most a `Close`/teardown helper. No
+   handler, no MCP tool, no service-layer caller takes the god
+   type. If this grep returns matches in `transport/`, `service/`,
+   `mcp/`, etc., the decomposition is cosmetic regardless of what
+   the detectors say.
+
+2. **Effective method set shrinks.** Run lagotto. The original
+   monolith's name should not appear under G1, G1B, G1C, or G1D.
+   If you want to verify directly:
 
    ```go
    ms := types.NewMethodSet(types.NewPointer(named))
    fmt.Println(ms.Len()) // should be near zero on the old god type
    ```
 
-2. **No aliases to a shared struct.** `grep -nE '^type \w+ = ' pkg/`
+3. **No aliases to a shared struct.** `grep -nE '^type \w+ = ' pkg/`
    should not show 3+ aliases pointing at one type.
-3. **No same-package aggregate holder.** The old type, if it still
-   exists, must not have 5+ pointer-fields to other types defined in
-   the same package.
-4. **Callers migrated.** `grep -rn 'OldType' --include='*.go'` should
-   show migration: callers now import the new subpackages and take
-   the narrow type. A successful split touches every caller; if the
-   diff is suspiciously small, the split is cosmetic.
-5. **The old interface narrowed.** If the god type satisfied an
+
+4. **No same-package aggregate holder.** The old type, if it still
+   exists, must not have 5+ pointer-fields to other types defined
+   in the same package.
+
+5. **No hidden holder via registry.** The package must not contain
+   ≥3 package-level `sync.Map` (or pointer-keyed map) variables
+   paired with ≥5 exported accessor functions taking the holder's
+   pointer as the first argument. That shape is functionally
+   equivalent to fields on the holder, but invisible to a struct
+   inspection.
+
+6. **Callers migrated.** `grep -rn 'OldType' --include='*.go'`
+   should show migration: callers now import the new subpackages
+   and take the narrow type. A successful split touches every
+   caller; if the diff is suspiciously small, the split is
+   cosmetic.
+
+7. **The old interface narrowed.** If the god type satisfied an
    omnibus interface (`graph.GraphStore`), that interface should
    have been split into per-concern interfaces and consumers
    updated. A `//nolint` on the legacy interface that no production
@@ -222,6 +354,10 @@ Before accepting a "T1 done" report, confirm all of:
 If any of these fails, the work is incomplete regardless of what
 lagotto reports — push back and request a real decomposition rather
 than accepting the green light.
+
+**A different agent must run this checklist than the one that
+implemented the refactor.** Self-review reliably misses what
+self-review is biased to miss; the separation is the gate.
 
 ## Workflow
 

@@ -88,8 +88,169 @@ func scanReceivers(pkgs []*packages.Package) []Finding {
 		findings = append(findings, scanMethodSets(pkg)...)
 		findings = append(findings, scanAliasClusters(pkg)...)
 		findings = append(findings, scanAggregateHolders(pkg)...)
+		findings = append(findings, scanHiddenHolders(pkg)...)
 	}
 	return findings
+}
+
+// scanHiddenHolders flags the third-stage Decomposition Theatre pattern:
+// a "thin" holder struct with no methods of its own, paired with
+// package-level sync.Map (or pointer-keyed map) registries and exported
+// accessor functions of the form `func Foo(h *Holder) *Sub { ... }`.
+//
+// Once aliases (G1B) and aggregate-holder fields (G1C) stop fooling
+// the auditor, the next evasion is to keep the holder type narrow
+// (one or zero fields) while reconstructing its API surface via
+// package-level registries keyed by the holder's pointer. Every
+// exported accessor takes the holder, looks up the per-instance
+// service in the registry, and returns it. Callers still receive
+// `*Holder` everywhere — the receiver split is cosmetic.
+//
+// Detection signal:
+//   - The package has ≥3 package-level vars typed sync.Map (or any
+//     map whose key type is a pointer).
+//   - The package has ≥5 exported functions whose first parameter is
+//     a pointer to a same-package struct H.
+//   - H itself has ≤2 of its own methods (so it's not a real receiver
+//     covered by G1; it's a hidden holder).
+//
+// Test doubles (Fake/Mock/Stub/Spy types and testutil packages) are
+// skipped, matching G1's filter.
+func scanHiddenHolders(pkg *packages.Package) []Finding {
+	if isTestPackage(pkg.PkgPath) {
+		return nil
+	}
+	scope := pkg.Types.Scope()
+
+	registryVars := collectRegistryVars(scope, pkg)
+	if len(registryVars) < 3 {
+		return nil
+	}
+
+	accessorsByHolder := collectHolderAccessors(scope, pkg)
+
+	var findings []Finding
+	for holderName, accessors := range accessorsByHolder {
+		if len(accessors) < 5 {
+			continue
+		}
+		obj := scope.Lookup(holderName)
+		if obj == nil {
+			continue
+		}
+		named, ok := obj.Type().(*types.Named)
+		if !ok {
+			continue
+		}
+		ms := types.NewMethodSet(types.NewPointer(named))
+		ownMethods := 0
+		for i := 0; i < ms.Len(); i++ {
+			if fn, ok := ms.At(i).Obj().(*types.Func); ok && fn.Pkg() == pkg.Types {
+				ownMethods++
+			}
+		}
+		if ownMethods > 2 {
+			// Real receiver — let G1 own the finding.
+			continue
+		}
+		sort.Strings(accessors)
+		sev := SevHigh
+		if len(accessors) >= 7 || len(registryVars) >= 6 {
+			sev = SevCritical
+		}
+		findings = append(findings, Finding{
+			Smell:    "Hidden Holder",
+			SmellID:  "G1D",
+			Severity: sev,
+			Location: pkg.PkgPath + " (" + holderName + ")",
+			Message: fmt.Sprintf("Type %s has %d own methods but %d exported package-level functions take *%s as their first argument, with %d package-level sync.Map registries in the same package. The package is reconstructing the holder's API surface via registry maps; callers still receive *%s everywhere, so the receiver split is cosmetic.",
+				holderName, ownMethods, len(accessors), holderName, len(registryVars), holderName),
+			Evidence: map[string]any{
+				"package":            pkg.PkgPath,
+				"holder":             holderName,
+				"own_method_count":   ownMethods,
+				"accessor_count":     len(accessors),
+				"accessor_funcs":     accessors,
+				"registry_var_count": len(registryVars),
+				"registry_vars":      registryVars,
+			},
+			Suggestion: "Move each sub-service into its own subpackage and return them as separate values from the constructor. Callers take only the narrow sub-service they need; nobody takes *" + holderName + " in a production code path. Delete the package-level registry maps and the accessor functions in the same change.",
+		})
+	}
+	return findings
+}
+
+// collectRegistryVars returns the names of package-level vars whose
+// type is sync.Map or a Go map with a pointer key. These are the
+// candidate "registry" maps that a hidden holder uses to simulate
+// per-instance fields without declaring them on the holder struct.
+func collectRegistryVars(scope *types.Scope, pkg *packages.Package) []string {
+	var out []string
+	for _, name := range scope.Names() {
+		obj, ok := scope.Lookup(name).(*types.Var)
+		if !ok || obj.Pkg() != pkg.Types {
+			continue
+		}
+		if isRegistryType(obj.Type()) {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// isRegistryType reports whether t is sync.Map or a map whose key is
+// a pointer type. Both shapes are pointer-keyed lookup tables that
+// behave like per-instance fields on the pointer's pointee.
+func isRegistryType(t types.Type) bool {
+	if named, ok := t.(*types.Named); ok {
+		obj := named.Obj()
+		if obj != nil && obj.Pkg() != nil &&
+			obj.Pkg().Path() == "sync" && obj.Name() == "Map" {
+			return true
+		}
+	}
+	if m, ok := t.Underlying().(*types.Map); ok {
+		if _, ptr := m.Key().(*types.Pointer); ptr {
+			return true
+		}
+	}
+	return false
+}
+
+// collectHolderAccessors returns a map of `Holder` type name →
+// exported package-level function names whose first parameter is a
+// pointer to that same-package struct. Methods (functions with a
+// receiver) and unexported functions are excluded.
+func collectHolderAccessors(scope *types.Scope, pkg *packages.Package) map[string][]string {
+	out := map[string][]string{}
+	for _, name := range scope.Names() {
+		obj, ok := scope.Lookup(name).(*types.Func)
+		if !ok || !obj.Exported() || obj.Pkg() != pkg.Types {
+			continue
+		}
+		sig, ok := obj.Type().(*types.Signature)
+		if !ok || sig.Recv() != nil || sig.Params().Len() == 0 {
+			continue
+		}
+		ptr, ok := sig.Params().At(0).Type().(*types.Pointer)
+		if !ok {
+			continue
+		}
+		named, ok := ptr.Elem().(*types.Named)
+		if !ok || named.Obj().Pkg() != pkg.Types {
+			continue
+		}
+		if _, isStruct := named.Underlying().(*types.Struct); !isStruct {
+			continue
+		}
+		holderName := named.Obj().Name()
+		if isTestDouble(holderName) {
+			continue
+		}
+		out[holderName] = append(out[holderName], obj.Name())
+	}
+	return out
 }
 
 // scanAggregateHolders flags the second-stage Decomposition Theatre

@@ -21,6 +21,9 @@ gate every other improvement.
 - [G1C — Aggregate Holder](g1c-aggregate-holder.md): a struct that
   collects same-package sub-services so callers still pass one
   handle around.
+- [G1D — Hidden Holder via Registry](g1d-hidden-holder.md): a
+  thin holder paired with package-level `sync.Map` registries
+  keyed by the holder's pointer.
 - [G4 — God Dependency Bag](g4-god-dependency-bag.md): a `Deps`
   struct that mixes types from many unrelated packages.
 

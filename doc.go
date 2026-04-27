@@ -13,6 +13,7 @@
 //   - G1  — Receiver Monolith
 //   - G1B — Decomposition Theatre
 //   - G1C — Aggregate Holder
+//   - G1D — Hidden Holder via Registry
 //   - G2  — Stutter Names
 //   - G3  — Build-Tag Pair Sprawl
 //   - G4  — God Dependency Bag

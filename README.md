@@ -58,6 +58,7 @@ JSON output is the default contract for tooling. Each finding has
 | G1  | Receiver Monolith         | A named type's effective method set (incl. promoted via embedding) is ≥15 across ≥3 concerns |
 | G1B | Decomposition Theatre     | 3+ type aliases in one package all resolving to a single underlying struct                   |
 | G1C | Aggregate Holder          | A struct with 5+ same-package sub-service fields whose pointee method counts total ≥25       |
+| G1D | Hidden Holder             | Thin holder + ≥3 pointer-keyed registry maps + ≥5 exported `*Holder` accessors               |
 | G2  | Stutter Names             | Exported type/function repeats the package name (`lanes.LaneConfig`)                         |
 | G3  | Build-Tag Pair Sprawl     | >2 paired files conditioned by build tags (`*_stub.go` / `*_cgo.go`) in one dir              |
 | G4  | God Dependency Bag        | A `Deps`/`Container` struct mixes >8 dependency types from unrelated packages                |
@@ -98,6 +99,37 @@ All "concerns" are the same struct. Receivers are written as `(t *Mutator)`,
 per-receiver counts. The type checker collapses the aliases — every
 method is reachable through every alias and remains on the underlying
 struct. lagotto flags any package with 3+ aliases pointing at one struct.
+
+### G1D — Hidden Holder via Registry
+
+```go
+type TypeDB struct{ conn *Conn }
+
+var (
+    nodeReg   sync.Map // map[*TypeDB]*Mutator
+    edgeReg   sync.Map // ...
+    searchReg sync.Map
+    threadReg sync.Map
+    promoReg  sync.Map
+)
+
+func Nodes(t *TypeDB) *Mutator   { v, _ := nodeReg.Load(t); return v.(*Mutator) }
+func Edges(t *TypeDB) *Mutator   { v, _ := edgeReg.Load(t); return v.(*Mutator) }
+// ... etc.
+```
+
+The third disguise. The holder is "narrow" (no methods, one field)
+but the package-level registries do the job that struct fields would
+have done — invisibly. Every caller still receives `*TypeDB`, so the
+chokepoint is unchanged. lagotto's G1D detector flags any package
+with ≥3 pointer-keyed registry maps, ≥5 exported accessors taking
+`*Holder` as their first argument, and a holder type with ≤2 of its
+own methods.
+
+The remediation is the same as G1C: replace the registries with
+typed fields on the holder where the field types live in
+**subpackages** (cross-package fields are the goal, not same-package
+ones); update callers to take only the narrow sub-service.
 
 ### G1C — Aggregate Holder
 

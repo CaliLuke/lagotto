@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     split a god type)
   - `G1C` — Aggregate Holder (same-package sub-services on a
     holder struct)
+  - `G1D` — Hidden Holder via Registry (thin holder paired with
+    package-level pointer-keyed registry maps and accessor
+    functions)
   - `G2` — Stutter Names
   - `G3` — Build-Tag Pair Sprawl
   - `G4` — God Dependency Bag (filtered by distinct external
