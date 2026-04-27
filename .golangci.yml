@@ -1,0 +1,85 @@
+version: "2"
+
+run:
+  timeout: 3m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unused
+    - unconvert
+    - unparam
+
+  settings:
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+          arguments:
+            - "checkPrivateReceivers"
+            - "disableStutteringCheck"
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: var-declaration
+        - name: var-naming
+
+    misspell:
+      locale: US
+      ignore-rules:
+        # "Decomposition Theatre" (G1B) is the canonical smell name;
+        # the British spelling is intentional.
+        - theatre
+        - Theatre
+
+    gosec:
+      excludes:
+        # G104 (errcheck duplicate) and G304 (file path) — handled by errcheck/manual review.
+        - G104
+        - G304
+
+  exclusions:
+    presets:
+      - common-false-positives
+    rules:
+      - path: _test\.go$
+        linters:
+          - errcheck
+          - gosec
+          - revive
+          - unparam
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/CaliLuke/lagotto
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

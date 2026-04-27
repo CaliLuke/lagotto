@@ -1,0 +1,87 @@
+version: 2
+
+project_name: lagotto
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: lagotto
+    main: .
+    binary: lagotto
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: lagotto
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+      - docs/**/*
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"
+
+brews:
+  - name: lagotto
+    repository:
+      owner: CaliLuke
+      name: homebrew-tap
+      branch: main
+    homepage: "https://github.com/CaliLuke/lagotto"
+    description: "Sniff out Go layout smells (Receiver Monolith, Decomposition Theatre, Aggregate Holder, and more)."
+    license: MIT
+    install: |
+      bin.install "lagotto"
+    test: |
+      system "#{bin}/lagotto", "--version"
+
+release:
+  github:
+    owner: CaliLuke
+    name: lagotto
+  draft: false
+  prerelease: auto
+  header: |
+    ## lagotto {{ .Tag }}
+
+    Audit Go file/package layout for structural problems the language's
+    rules produce — Receiver Monolith, Decomposition Theatre, Aggregate
+    Holder, and 11 other smells.
+
+    Install via Homebrew:
+    ```bash
+    brew install caliluke/tap/lagotto
+    ```
+  footer: |
+    ---
+    See the [pattern docs](https://github.com/CaliLuke/lagotto/tree/main/docs/patterns)
+    for what each smell catches and how to fix it.

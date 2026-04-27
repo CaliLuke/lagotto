@@ -1,0 +1,95 @@
+# G8 — Internal Re-Export Tunnel
+
+A package's only role is to re-export names from a deeper package.
+Its types are aliases (`type Foo = inner.Foo`), its variables are
+re-bindings (`var Default = inner.Default`), and its functions are
+thin facades (`func Hello() string { return inner.Hello() }`).
+
+## Why this matters
+
+This is the TypeScript "barrel" pattern, where index files re-export
+everything to flatten import paths. In Go, it's structural noise:
+
+- The package adds a layer to the import graph with no logic.
+- Every change to the inner package needs a corresponding change in
+  the tunnel.
+- Readers see `outer.Foo` and have to chase the alias to learn it's
+  really `inner.Foo`.
+
+Go's preferred answer to "I want a flatter import path" is to move
+the inner package up, not to wrap it.
+
+## What lagotto checks
+
+For each package, the detector counts how much of the package's
+exported surface is a tunnel:
+
+- type aliases that resolve to a named type in another package
+- variables initialized to values from another package
+- functions whose body is a thin pass-through to a function in
+  another package (uses the same heuristics as
+  [G6](g6-facade-method.md))
+
+If the dominant target package accounts for the majority of the
+tunneled identifiers and the package has no real logic of its own,
+it fires.
+
+| Severity | Condition                                             |
+| -------- | ----------------------------------------------------- |
+| MEDIUM   | majority of declarations tunnel to one deeper package |
+
+## Positive example (fires)
+
+```go
+package outer
+
+import "example.com/v2/inner"
+
+type Foo = inner.Foo
+type Bar = inner.Bar
+
+var Default = inner.Default
+
+func Hello() string { return inner.Hello() }
+func World() string { return inner.World() }
+```
+
+Every declaration is a forward to `inner`. The `outer` package adds
+nothing.
+
+## Negative example (does NOT fire)
+
+```go
+package billing
+
+import "example.com/money"
+
+type Invoice struct {
+    Total money.Amount
+}
+
+func (i Invoice) IsOverdue() bool { /* logic */ }
+```
+
+The package re-uses types from `money`, but it has its own logic
+(method on its own type). Not a tunnel.
+
+## How to fix it
+
+The right answer depends on why the tunnel exists.
+
+- **Compatibility shim during migration**: keep it, but set a
+  deletion deadline. Once consumers have migrated to the new path,
+  delete the shim.
+- **"Flatter import paths"** (TypeScript instinct): move the inner
+  package's contents up. The tunnel disappears.
+- **Selective re-exports** (only some inner names should be public):
+  keep the inner package private (`internal/`) and accept the
+  re-exports as the public API. Document them with godoc so they
+  don't read as a barrel.
+
+## Related
+
+Type aliases at scale within a single package signal
+[G1B](g1b-decomposition-theatre.md), not G8. G8 is specifically
+about cross-package re-export.

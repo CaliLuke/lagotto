@@ -1,0 +1,481 @@
+package main
+
+import (
+	"fmt"
+	"go/ast"
+	"go/types"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/spf13/cobra"
+	"golang.org/x/tools/go/packages"
+)
+
+// receiverTypeName returns the receiver type name for a method's
+// receiver field, using TypesInfo for accurate resolution. Strips
+// pointer indirection and generic instantiation arguments. Used by
+// other detectors (facades) that work at the AST level.
+func receiverTypeName(info *types.Info, recv *ast.Field) string {
+	if info == nil {
+		return astReceiverFallback(recv.Type)
+	}
+	t := info.TypeOf(recv.Type)
+	if t == nil {
+		return astReceiverFallback(recv.Type)
+	}
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	named, ok := t.(*types.Named)
+	if !ok {
+		return ""
+	}
+	return named.Obj().Name()
+}
+
+func astReceiverFallback(expr ast.Expr) string {
+	switch x := expr.(type) {
+	case *ast.Ident:
+		return x.Name
+	case *ast.StarExpr:
+		return astReceiverFallback(x.X)
+	case *ast.IndexExpr:
+		return astReceiverFallback(x.X)
+	case *ast.IndexListExpr:
+		return astReceiverFallback(x.X)
+	}
+	return ""
+}
+
+var monolithsCmd = &cobra.Command{
+	Use:   "monoliths [path]",
+	Short: "Find Receiver Monoliths and Decomposition Theatre.",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(_ *cobra.Command, args []string) error {
+		root := "."
+		if len(args) == 1 {
+			root = args[0]
+		}
+		pkgs, err := loadPackages(root)
+		if err != nil {
+			return err
+		}
+		return emit(&Report{Root: root, Tags: resolvedTags(), Findings: scanReceivers(pkgs)})
+	},
+}
+
+// scanReceivers returns Receiver Monolith (G1) findings computed from
+// the type-checker's full method set on each named struct, plus
+// Decomposition Theatre (G1B) findings for alias clusters that pretend
+// to split a god type without actually moving methods.
+//
+// Counting via the method set (rather than source-AST receiver names)
+// is critical: a god type that "decomposes" itself by embedding a
+// helper struct and adding nine type aliases (`type Mutator = helper`)
+// is the same monolith with a costume on. The method-set view sees
+// through both tricks because Go's type system promotes methods
+// through embedding and resolves aliases.
+func scanReceivers(pkgs []*packages.Package) []Finding {
+	var findings []Finding
+	for _, pkg := range pkgs {
+		if pkg.PkgPath == "" || shouldExclude(pkg.PkgPath) {
+			continue
+		}
+		if pkg.Types == nil || pkg.Fset == nil {
+			continue
+		}
+		findings = append(findings, scanMethodSets(pkg)...)
+		findings = append(findings, scanAliasClusters(pkg)...)
+		findings = append(findings, scanAggregateHolders(pkg)...)
+	}
+	return findings
+}
+
+// scanAggregateHolders flags the second-stage Decomposition Theatre
+// pattern: a struct whose fields are 5+ pointers to other named types
+// in the same package, where the pointee types collectively own a
+// large method set. After aliases-to-one-struct fails to fool the
+// linter, the next move is to make sub-services (`*Mutator`,
+// `*Searcher`, ...) and aggregate them on a holder (`TypeDB { Nodes,
+// Edges, Search, ... }`). Callers still pass one handle around, so
+// the receiver split isn't real until those sub-services move into
+// their own subpackages and callers take only the one they need.
+func scanAggregateHolders(pkg *packages.Package) []Finding {
+	scope := pkg.Types.Scope()
+	var findings []Finding
+	for _, name := range scope.Names() {
+		obj := scope.Lookup(name)
+		tn, ok := obj.(*types.TypeName)
+		if !ok || tn.IsAlias() {
+			continue
+		}
+		named, ok := obj.Type().(*types.Named)
+		if !ok {
+			continue
+		}
+		st, ok := named.Underlying().(*types.Struct)
+		if !ok {
+			continue
+		}
+		var samePkgFields []string
+		totalMethods := 0
+		for i := 0; i < st.NumFields(); i++ {
+			f := st.Field(i)
+			ft := f.Type()
+			if ptr, ok := ft.(*types.Pointer); ok {
+				ft = ptr.Elem()
+			}
+			fnamed, ok := ft.(*types.Named)
+			if !ok {
+				continue
+			}
+			if fnamed.Obj().Pkg() == nil || fnamed.Obj().Pkg() != pkg.Types {
+				continue
+			}
+			if _, isStruct := fnamed.Underlying().(*types.Struct); !isStruct {
+				continue
+			}
+			ms := types.NewMethodSet(types.NewPointer(fnamed))
+			if ms.Len() == 0 {
+				continue
+			}
+			samePkgFields = append(samePkgFields, f.Name()+" *"+fnamed.Obj().Name())
+			totalMethods += ms.Len()
+		}
+		if len(samePkgFields) < 5 {
+			continue
+		}
+		if totalMethods < 25 {
+			continue
+		}
+		sev := SevHigh
+		if totalMethods >= 50 || len(samePkgFields) >= 7 {
+			sev = SevCritical
+		}
+		sort.Strings(samePkgFields)
+		findings = append(findings, Finding{
+			Smell:    "Aggregate Holder",
+			SmellID:  "G1C",
+			Severity: sev,
+			Location: pkg.PkgPath + " (" + name + ")",
+			Message: fmt.Sprintf("Struct %s aggregates %d same-package sub-services with %d total methods. Callers still pass one %s handle, so the receiver split is cosmetic — the sub-services have not moved into their own packages.",
+				name, len(samePkgFields), totalMethods, name),
+			Evidence: map[string]any{
+				"package":               pkg.PkgPath,
+				"type":                  name,
+				"sub_service_count":     len(samePkgFields),
+				"sub_service_fields":    samePkgFields,
+				"total_pointee_methods": totalMethods,
+			},
+			Suggestion: "Move each sub-service struct into its own subpackage and update callers to take only the narrow service they need. Delete the holder type, or reduce it to a constructor that returns the sub-services as separate values rather than fields on a shared struct. A holder that every caller still receives is functionally a god type with extra punctuation.",
+		})
+	}
+	return findings
+}
+
+// scanMethodSets walks each package's named struct types, builds the
+// effective method set on the pointer-receiver, filters to methods
+// declared in the same package (so we don't flag thin wrappers around
+// external types like *sql.DB), and emits a finding when the type
+// crosses the Receiver Monolith thresholds.
+func scanMethodSets(pkg *packages.Package) []Finding {
+	scope := pkg.Types.Scope()
+	var findings []Finding
+	for _, name := range scope.Names() {
+		obj := scope.Lookup(name)
+		tn, ok := obj.(*types.TypeName)
+		if !ok || tn.IsAlias() {
+			continue
+		}
+		named, ok := obj.Type().(*types.Named)
+		if !ok {
+			continue
+		}
+		if _, isStruct := named.Underlying().(*types.Struct); !isStruct {
+			continue
+		}
+		if isTestDouble(name) || isTestPackage(pkg.PkgPath) {
+			continue
+		}
+		ptr := types.NewPointer(named)
+		ms := types.NewMethodSet(ptr)
+		if ms.Len() == 0 {
+			continue
+		}
+
+		var methodNames []string
+		files := map[string]bool{}
+		promotedFrom := map[string]int{}
+		localCount := 0
+		for i := 0; i < ms.Len(); i++ {
+			sel := ms.At(i)
+			fn, ok := sel.Obj().(*types.Func)
+			if !ok || fn.Pkg() == nil || fn.Pkg() != pkg.Types {
+				continue
+			}
+			methodNames = append(methodNames, fn.Name())
+			if pos := pkg.Fset.Position(fn.Pos()); pos.IsValid() {
+				files[filepath.Base(pos.Filename)] = true
+			}
+			if len(sel.Index()) > 1 {
+				if from := embeddedFieldType(named, sel.Index()[0]); from != "" {
+					promotedFrom[from]++
+				}
+			} else {
+				localCount++
+			}
+		}
+
+		if len(methodNames) < 15 {
+			continue
+		}
+		concerns := detectConcerns(methodNames)
+		if len(concerns) < 3 {
+			continue
+		}
+
+		// File-count is reported as evidence but not gated. A
+		// monolith squeezed into 1–2 files is still a monolith;
+		// the original heuristic missed types that had been
+		// "decomposed" by reshuffling files within one package.
+		sev := SevMedium
+		if len(methodNames) >= 15 {
+			sev = SevHigh
+		}
+		if len(methodNames) >= 25 || len(files) >= 7 {
+			sev = SevCritical
+		}
+
+		// Detect "decomposition theatre" via embedding: most methods
+		// promoted from a single same-package embedded type. The
+		// embedded type is ALSO flagged in its own right by this
+		// scanner; the hint just tells the reader the outer type's
+		// monolith problem is solved by removing the embedding, not
+		// by reshuffling files.
+		var theatreNote string
+		biggestPromoter, biggestPromoterCount := "", 0
+		for k, v := range promotedFrom {
+			if v > biggestPromoterCount {
+				biggestPromoter = k
+				biggestPromoterCount = v
+			}
+		}
+		if biggestPromoter != "" && biggestPromoterCount*2 > len(methodNames) {
+			theatreNote = fmt.Sprintf(" %d/%d methods are promoted via embedded *%s — removing the embedding is the structural fix, not file moves.",
+				biggestPromoterCount, len(methodNames), biggestPromoter)
+		}
+
+		ev := map[string]any{
+			"package":      pkg.PkgPath,
+			"type":         name,
+			"method_count": len(methodNames),
+			"file_count":   len(files),
+			"files":        sortedKeys(files),
+			"concerns":     concerns,
+			"methods":      sortedCopy(methodNames),
+			"local_count":  localCount,
+		}
+		if len(promotedFrom) > 0 {
+			ev["promoted_from"] = promotedFrom
+		}
+
+		suggestion := "Decompose " + name + " into per-concern receiver types in subpackages, one per concern group. Each subpackage exports its own struct holding only the state it needs. Delete " + name + " (or reduce it to a tiny construction helper). Update every caller in the same change. Do not retain accessors, facade methods, embedding shortcuts, or type aliases on the original type."
+		if theatreNote != "" {
+			suggestion += " IMPORTANT: this type's method set is dominated by methods promoted from an embedded same-package type — file moves and renamed receivers will not fix this; the embedding itself is the smell."
+		}
+
+		findings = append(findings, Finding{
+			Smell:    "Receiver Monolith",
+			SmellID:  "G1",
+			Severity: sev,
+			Location: filepath.Dir(firstFilename(pkg)) + " (" + name + ")",
+			Message: fmt.Sprintf("Type %s has %d methods (effective method set, including promoted) across %d files spanning %d concern groups (%s).%s",
+				name, len(methodNames), len(files), len(concerns), strings.Join(concerns, ", "), theatreNote),
+			Evidence:   ev,
+			Suggestion: suggestion,
+		})
+	}
+	return findings
+}
+
+// scanAliasClusters reports the alias-cluster Decomposition Theatre
+// pattern: 3+ exported type aliases in the same package whose RHS is
+// a single underlying type. This is the trick used to make `lagotto
+// monoliths` go quiet while keeping every method on one struct (with
+// names like `Mutator = graphOps`, `Searcher = graphOps`, ...).
+func scanAliasClusters(pkg *packages.Package) []Finding {
+	scope := pkg.Types.Scope()
+	clusters := map[string][]string{}
+	for _, name := range scope.Names() {
+		obj := scope.Lookup(name)
+		tn, ok := obj.(*types.TypeName)
+		if !ok || !tn.IsAlias() {
+			continue
+		}
+		// Go 1.22+ models aliases as *types.Alias; types.Unalias()
+		// resolves through any chain of aliases to the underlying
+		// concrete type so we can compare cluster targets by identity.
+		target := types.Unalias(obj.Type())
+		if ptr, ok := target.(*types.Pointer); ok {
+			target = ptr.Elem()
+		}
+		named, ok := target.(*types.Named)
+		if !ok {
+			continue
+		}
+		if named.Obj().Pkg() == nil || named.Obj().Pkg() != pkg.Types {
+			continue // alias to external type — not interesting here
+		}
+		clusters[named.Obj().Name()] = append(clusters[named.Obj().Name()], name)
+	}
+
+	var findings []Finding
+	for target, aliases := range clusters {
+		if len(aliases) < 3 {
+			continue
+		}
+		sort.Strings(aliases)
+		sev := SevHigh
+		if len(aliases) >= 6 {
+			sev = SevCritical
+		}
+		findings = append(findings, Finding{
+			Smell:    "Decomposition Theatre",
+			SmellID:  "G1B",
+			Severity: sev,
+			Location: pkg.PkgPath + " (alias cluster -> " + target + ")",
+			Message: fmt.Sprintf("Package %s declares %d type aliases that all resolve to %s. This is structural fan-out, not decomposition: every alias inherits the same method set on the same struct, so the receiver remains a monolith no matter how many names point at it.",
+				pkg.Name, len(aliases), target),
+			Evidence: map[string]any{
+				"package":     pkg.PkgPath,
+				"target_type": target,
+				"aliases":     aliases,
+				"alias_count": len(aliases),
+			},
+			Suggestion: "Replace each alias with a distinct struct in its own subpackage, holding only the state it needs. The shared underlying type (" + target + ") should be deleted; aliasing it under multiple names does not split the monolith. Update callers to take the new narrow types directly.",
+		})
+	}
+	return findings
+}
+
+// isTestDouble matches names that signal an intentional comprehensive
+// interface implementation (Fake/Mock/Stub/Spy). Such types legitimately
+// own a method set as wide as the interface they satisfy.
+func isTestDouble(name string) bool {
+	for _, prefix := range []string{"Fake", "Mock", "Stub", "Spy", "Noop", "Nop"} {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// isTestPackage filters out testutil/testing helper packages.
+func isTestPackage(path string) bool {
+	for _, frag := range []string{"/testutil", "/testing", "/testfixture", "/testdouble", "/internal/testutil"} {
+		if strings.Contains(path, frag) {
+			return true
+		}
+	}
+	return false
+}
+
+// embeddedFieldType returns the name of the named type embedded at
+// field index i of named's struct underlying, stripping pointer
+// indirection. Empty if the field is not an embedded named type.
+func embeddedFieldType(named *types.Named, i int) string {
+	st, ok := named.Underlying().(*types.Struct)
+	if !ok || i < 0 || i >= st.NumFields() {
+		return ""
+	}
+	f := st.Field(i)
+	if !f.Embedded() {
+		return ""
+	}
+	t := f.Type()
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	if n, ok := t.(*types.Named); ok {
+		return n.Obj().Name()
+	}
+	return ""
+}
+
+func firstFilename(pkg *packages.Package) string {
+	if len(pkg.GoFiles) > 0 {
+		return pkg.GoFiles[0]
+	}
+	if len(pkg.CompiledGoFiles) > 0 {
+		return pkg.CompiledGoFiles[0]
+	}
+	return pkg.PkgPath
+}
+
+// detectConcerns returns the distinct concern groups present in a
+// list of method names. Groups are identified by leading verb
+// prefix; a method whose name starts with one of the known verbs
+// belongs to that verb's group. Methods that don't match any verb
+// fall into an "other" bucket.
+func detectConcerns(methods []string) []string {
+	verbs := []struct {
+		verbs  []string
+		concer string
+	}{
+		{[]string{"Create", "Insert", "Add", "New"}, "create"},
+		{[]string{"Get", "List", "Find", "Read", "Load", "Fetch"}, "read"},
+		{[]string{"Update", "Edit", "Patch", "Set", "Replace", "Upsert", "Modify"}, "update"},
+		{[]string{"Delete", "Remove", "Drop", "Purge", "Clear"}, "delete"},
+		{[]string{"Merge", "Combine"}, "merge"},
+		{[]string{"Search", "Query", "Lookup"}, "search"},
+		{[]string{"Run", "Execute", "Exec", "Apply"}, "execute"},
+		{[]string{"Check", "Validate", "Verify", "Audit"}, "validate"},
+		{[]string{"Connect", "Disconnect", "Close", "Open", "Reconnect", "Reset"}, "connect"},
+		{[]string{"Export", "Import", "Backup", "Restore", "Dump"}, "export"},
+		{[]string{"Thread", "Bring", "Resolve"}, "thread"},
+		{[]string{"Promote", "Approve", "Reject", "Propose"}, "promote"},
+		{[]string{"Count", "Stats", "Status"}, "meta"},
+		{[]string{"Format", "Render", "Encode", "Decode"}, "format"},
+	}
+	groupSet := map[string]bool{}
+	other := 0
+	for _, m := range methods {
+		matched := false
+		for _, v := range verbs {
+			for _, prefix := range v.verbs {
+				if strings.HasPrefix(m, prefix) {
+					groupSet[v.concer] = true
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
+		}
+		if !matched {
+			other++
+		}
+	}
+	if other >= 3 {
+		groupSet["other"] = true
+	}
+	return sortedKeys(groupSet)
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedCopy(s []string) []string {
+	out := make([]string, len(s))
+	copy(out, s)
+	sort.Strings(out)
+	return out
+}
