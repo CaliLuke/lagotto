@@ -166,7 +166,7 @@ through `pkg.TypesInfo`.
 
 - `docs/patterns/g1e-foreign-holder.md` — full pattern doc following
   the same structure as the other `gN-*.md` files.
-- `docs/patterns/README.md` — add entry to the "big four (always
+- `docs/patterns/patterns.md` — add entry to the "big four (always
   fix first)" group; rename to "the big five".
 - `README.md` — add G1E row to the smell catalog table; add
   description block in the "headline detector" section.
