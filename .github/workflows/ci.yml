@@ -15,7 +15,7 @@ jobs:
           go-version: "1.23"
           cache: true
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.1.6
           args: --timeout=3m
@@ -25,6 +25,6 @@ jobs:
         run: go test -race -count=1 ./...
       - name: self-audit
         run: |
-          go build -o lagotto .
+          go build -o lagotto ./cmd/lagotto
           ./lagotto audit --format=text . | tee findings.out
           ! grep -q "^\[" findings.out
