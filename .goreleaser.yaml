@@ -52,10 +52,12 @@ changelog:
 
 brews:
   - name: lagotto
+    skip_upload: "{{ if .Env.HOMEBREW_TAP_GITHUB_TOKEN }}false{{ else }}true{{ end }}"
     repository:
       owner: CaliLuke
       name: homebrew-tap
       branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/CaliLuke/lagotto"
     description: "Sniff out Go layout smells (Receiver Monolith, Decomposition Theatre, Aggregate Holder, and more)."
     license: MIT
