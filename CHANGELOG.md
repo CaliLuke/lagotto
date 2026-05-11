@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-11
+
+### Fixed
+
+- Tightened G8 function re-export detection so generated
+  service-specific factory functions returning framework types are
+  not classified as Internal Re-Export Tunnels. Transparent
+  same-name wrappers and alias/value re-exports still count.
+
 ### Changed
 
 - Restructured the repo into `cmd/lagotto/` + `internal/` layout
@@ -56,5 +65,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Goreleaser configuration with multi-arch darwin/linux builds and
   Homebrew tap publish.
 
-[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/CaliLuke/lagotto/releases/tag/v0.1.1
 [0.1.0]: https://github.com/CaliLuke/lagotto/releases/tag/v0.1.0

@@ -3,7 +3,7 @@
 A package's only role is to re-export names from a deeper package.
 Its types are aliases (`type Foo = inner.Foo`), its variables are
 re-bindings (`var Default = inner.Default`), and its functions are
-thin facades (`func Hello() string { return inner.Hello() }`).
+transparent wrappers (`func Hello() string { return inner.Hello() }`).
 
 ## Why this matters
 
@@ -26,9 +26,8 @@ exported surface is a tunnel:
 
 - type aliases that resolve to a named type in another package
 - variables initialized to values from another package
-- functions whose body is a thin pass-through to a function in
-  another package (uses the same heuristics as
-  [G6](g6-facade-method.md))
+- functions whose body directly calls a same-named function in
+  another package and forwards the wrapper's parameters unchanged
 
 If the dominant target package accounts for the majority of the
 tunneled identifiers and the package has no real logic of its own,
@@ -73,6 +72,18 @@ func (i Invoice) IsOverdue() bool { /* logic */ }
 
 The package re-uses types from `money`, but it has its own logic
 (method on its own type). Not a tunnel.
+
+Generated service helpers that return framework types are also not
+tunnels when they add service-specific identity:
+
+```go
+func MakeInvalidRequest(err error) *runtime.ServiceError {
+    return runtime.NewServiceError(err, "invalid_request")
+}
+```
+
+That function uses `runtime`, but it does not re-export
+`runtime.NewServiceError`.
 
 ## How to fix it
 

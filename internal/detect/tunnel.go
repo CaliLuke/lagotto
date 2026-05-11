@@ -22,7 +22,7 @@ import (
 //
 //	type X = otherPkg.Y                       (type alias to another pkg)
 //	var  X = otherPkg.Y                       (variable bound to qualified ident)
-//	func X(args) ret { return otherPkg.X(...) } (function-shaped facade)
+//	func X(args) ret { return otherPkg.X(args...) } (transparent function wrapper)
 //
 // A package is flagged when ≥50% of its exported top-level decls
 // are re-exports AND a single target package accounts for at least
@@ -84,7 +84,7 @@ func ScanReExportTunnel(pkgs []*packages.Package) []audit.Finding {
 						continue
 					}
 					total++
-					if t := facadeTargetPkg(pkg, d); t != "" && t != pkg.PkgPath {
+					if t := functionReExportTargetPkg(pkg, d); t != "" && t != pkg.PkgPath {
 						reExports++
 						targets[t]++
 					}
@@ -156,25 +156,55 @@ func selectorPackage(pkg *packages.Package, expr ast.Expr) string {
 	return pkgName.Imported().Path()
 }
 
-// facadeTargetPkg returns the import path that a function's body
-// delegates to, if the function is a thin pass-through. Reuses the
-// same heuristics as the Facade Method detector but extended to
-// non-receiver funcs.
-func facadeTargetPkg(pkg *packages.Package, fn *ast.FuncDecl) string {
-	if fn.Body == nil || len(fn.Body.List) == 0 || len(fn.Body.List) > 3 {
+// functionReExportTargetPkg returns the import path that a function
+// transparently re-exports. G8 is about packages that expose another
+// package's API surface, so a function only counts when it preserves
+// the delegated function name and forwards its own parameters without
+// adding literals, constants, validation, or other package-specific
+// meaning.
+func functionReExportTargetPkg(pkg *packages.Package, fn *ast.FuncDecl) string {
+	if fn.Body == nil || len(fn.Body.List) != 1 {
 		return ""
 	}
-	last := fn.Body.List[len(fn.Body.List)-1]
-	call := extractDelegateCall(last)
+	call := extractDelegateCall(fn.Body.List[0])
 	if call == nil {
 		return ""
 	}
-	for _, s := range fn.Body.List[:len(fn.Body.List)-1] {
-		if !isTrivialPrefix(s) {
-			return ""
-		}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != fn.Name.Name {
+		return ""
+	}
+	if !forwardsParamsInOrder(fn, call) {
+		return ""
 	}
 	return callTargetPackage(pkg, call)
+}
+
+func forwardsParamsInOrder(fn *ast.FuncDecl, call *ast.CallExpr) bool {
+	params := paramNames(fn.Type.Params)
+	if len(params) != len(call.Args) {
+		return false
+	}
+	for i, arg := range call.Args {
+		id, ok := arg.(*ast.Ident)
+		if !ok || id.Name != params[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func paramNames(fields *ast.FieldList) []string {
+	if fields == nil {
+		return nil
+	}
+	var names []string
+	for _, field := range fields.List {
+		for _, name := range field.Names {
+			names = append(names, name.Name)
+		}
+	}
+	return names
 }
 
 // dominantTarget returns the most-referenced package and its count
