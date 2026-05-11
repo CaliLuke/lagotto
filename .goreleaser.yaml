@@ -63,7 +63,7 @@ brews:
     install: |
       bin.install "lagotto"
     test: |
-      system "#{bin}/lagotto", "--version"
+      system bin/"lagotto", "--version"
 
 release:
   github:
