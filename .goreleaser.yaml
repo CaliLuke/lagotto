@@ -52,7 +52,6 @@ changelog:
 
 brews:
   - name: lagotto
-    skip_upload: "{{ if .Env.HOMEBREW_TAP_GITHUB_TOKEN }}false{{ else }}true{{ end }}"
     repository:
       owner: CaliLuke
       name: homebrew-tap
