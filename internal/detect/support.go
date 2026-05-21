@@ -103,6 +103,24 @@ func firstFilename(pkg *packages.Package) string {
 	return pkg.PkgPath
 }
 
+// syntaxFilename returns the source filename corresponding to pkg.Syntax[i].
+// go/packages does not guarantee GoFiles and Syntax have identical lengths for
+// every loaded package shape, so detectors must not index GoFiles directly.
+func syntaxFilename(pkg *packages.Package, i int, file *ast.File) string {
+	if i >= 0 && i < len(pkg.GoFiles) {
+		return pkg.GoFiles[i]
+	}
+	if i >= 0 && i < len(pkg.CompiledGoFiles) {
+		return pkg.CompiledGoFiles[i]
+	}
+	if pkg.Fset != nil && file != nil {
+		if pos := pkg.Fset.Position(file.Package); pos.Filename != "" {
+			return pos.Filename
+		}
+	}
+	return firstFilename(pkg)
+}
+
 // sortedKeys returns the map's keys in sorted order.
 func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))

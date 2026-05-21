@@ -41,7 +41,7 @@ func ScanReExportTunnel(pkgs []*packages.Package) []audit.Finding {
 		targets := map[string]int{}
 
 		for i, file := range pkg.Syntax {
-			fname := pkg.GoFiles[i]
+			fname := syntaxFilename(pkg, i, file)
 			if strings.HasSuffix(fname, "_test.go") {
 				continue
 			}

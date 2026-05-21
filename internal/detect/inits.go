@@ -28,7 +28,7 @@ func ScanInitCoupling(pkgs []*packages.Package) []audit.Finding {
 		fileCounts := map[string]int{}
 		total := 0
 		for i, file := range pkg.Syntax {
-			fname := pkg.GoFiles[i]
+			fname := syntaxFilename(pkg, i, file)
 			if strings.HasSuffix(fname, "_test.go") {
 				continue
 			}

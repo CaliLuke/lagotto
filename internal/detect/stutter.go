@@ -27,7 +27,7 @@ func ScanStutter(pkgs []*packages.Package) []audit.Finding {
 		}
 		offenders := map[string][]string{}
 		for i, f := range pkg.Syntax {
-			fname := pkg.GoFiles[i]
+			fname := syntaxFilename(pkg, i, f)
 			if strings.HasSuffix(fname, "_test.go") {
 				continue
 			}

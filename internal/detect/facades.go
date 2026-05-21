@@ -36,7 +36,7 @@ func ScanFacades(pkgs []*packages.Package) []audit.Finding {
 			continue
 		}
 		for i, file := range pkg.Syntax {
-			fname := pkg.GoFiles[i]
+			fname := syntaxFilename(pkg, i, file)
 			if strings.HasSuffix(fname, "_test.go") {
 				continue
 			}

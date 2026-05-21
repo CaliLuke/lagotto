@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-21
+
+### Fixed
+
+- Prevented G2, G4, G5, G6, G7, and G8 detectors from panicking when
+  `go/packages` returns package metadata where `Syntax` and `GoFiles`
+  have different lengths. Detectors now resolve source filenames
+  defensively and continue auditing instead of crashing.
+
 ## [0.1.1] - 2026-05-11
 
 ### Fixed
@@ -65,6 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Goreleaser configuration with multi-arch darwin/linux builds and
   Homebrew tap publish.
 
-[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/CaliLuke/lagotto/releases/tag/v0.1.2
 [0.1.1]: https://github.com/CaliLuke/lagotto/releases/tag/v0.1.1
 [0.1.0]: https://github.com/CaliLuke/lagotto/releases/tag/v0.1.0
