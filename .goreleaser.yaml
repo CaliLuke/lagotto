@@ -52,6 +52,7 @@ changelog:
 
 brews:
   - name: lagotto
+    directory: Formula
     repository:
       owner: CaliLuke
       name: homebrew-tap
