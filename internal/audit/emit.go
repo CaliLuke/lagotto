@@ -1,16 +1,30 @@
 package audit
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
 )
 
+// ValidateFormat rejects unknown --format values. The CLI calls this
+// before loading any packages so a typo fails in milliseconds instead
+// of after a full typecheck of the target module.
+func ValidateFormat(format string) error {
+	switch format {
+	case "json", "text":
+		return nil
+	}
+	return fmt.Errorf("unknown format %q (json|text)", format)
+}
+
 // Emit serializes a report in the requested format ("json" or "text").
 // Findings are sorted by severity, smell ID, then location for stable
-// output across runs.
+// output across runs. A nil Findings slice is normalized to an empty
+// array so JSON consumers always see an array.
 func Emit(report *Report, format string) error {
 	if report.Findings == nil {
 		report.Findings = []Finding{}
@@ -32,35 +46,41 @@ func Emit(report *Report, format string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(report)
 	case "text":
-		emitText(report)
-		return nil
+		return emitText(os.Stdout, report)
 	default:
-		return fmt.Errorf("unknown format %q (json|text)", format)
+		return ValidateFormat(format)
 	}
 }
 
-// emitText writes a human-readable rendering of the report to
-// stdout. JSON remains the contract for tooling; the text format
-// exists to make manual `lagotto` invocations readable.
-func emitText(r *Report) {
-	fmt.Printf("Lagotto audit — %s\n", r.Root)
+// emitText writes a human-readable rendering of the report to w.
+// JSON remains the contract for tooling; the text format exists to
+// make manual `lagotto` invocations readable. Write errors surface
+// through the buffered writer's sticky error on Flush, so a truncated
+// report (full disk, closed pipe) fails the run instead of exiting 0.
+func emitText(w io.Writer, r *Report) error {
+	bw := bufio.NewWriter(w)
+	fmt.Fprintf(bw, "Lagotto audit — %s\n", r.Root)
 	if len(r.Tags) > 0 {
-		fmt.Printf("Build tags: %s\n", strings.Join(r.Tags, ","))
+		fmt.Fprintf(bw, "Build tags: %s\n", strings.Join(r.Tags, ","))
 	}
-	fmt.Printf("%d findings\n\n", len(r.Findings))
+	fmt.Fprintf(bw, "%d findings\n\n", len(r.Findings))
 	for _, f := range r.Findings {
-		fmt.Printf("[%s] %s (%s)\n", f.Severity, f.Smell, f.SmellID)
-		fmt.Printf("  location: %s\n", f.Location)
-		fmt.Printf("  %s\n", f.Message)
+		fmt.Fprintf(bw, "[%s] %s (%s)\n", f.Severity, f.Smell, f.SmellID)
+		fmt.Fprintf(bw, "  location: %s\n", f.Location)
+		fmt.Fprintf(bw, "  %s\n", f.Message)
 		if len(f.Evidence) > 0 {
-			ev, _ := json.Marshal(f.Evidence)
-			fmt.Printf("  evidence: %s\n", ev)
+			ev, err := json.Marshal(f.Evidence)
+			if err != nil {
+				return fmt.Errorf("marshal evidence for %s: %w", f.Location, err)
+			}
+			fmt.Fprintf(bw, "  evidence: %s\n", ev)
 		}
 		if f.Suggestion != "" {
-			fmt.Printf("  suggestion: %s\n", f.Suggestion)
+			fmt.Fprintf(bw, "  suggestion: %s\n", f.Suggestion)
 		}
-		fmt.Println()
+		fmt.Fprintln(bw)
 	}
+	return bw.Flush()
 }
 
 // ResolvedTags splits a comma-separated --tags flag value into the

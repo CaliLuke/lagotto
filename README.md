@@ -45,11 +45,21 @@ lagotto monoliths ./internal
 
 # Human-readable output
 lagotto audit --format=text ./internal
+
+# Gate CI on findings: exit 2 if anything MEDIUM or worse is found
+lagotto audit --fail-on=medium ./internal
 ```
 
 JSON output is the default contract for tooling. Each finding has
 `smell`, `smell_id`, `severity`, `location`, `message`, `evidence`, and
-`suggestion`. Findings are pre-sorted CRITICAL → LOW.
+`suggestion`. Findings are pre-sorted CRITICAL → LOW. When packages
+fail to load or typecheck, the report carries a `load_errors` array
+(and the errors are printed to stderr) so a degraded audit is
+distinguishable from a clean one.
+
+Exit codes: `0` clean run, `1` run failed, `2` findings at or above
+the `--fail-on` threshold (`critical|high|medium|low`; without the
+flag lagotto always exits 0 when the audit runs).
 
 ## Smell catalog
 

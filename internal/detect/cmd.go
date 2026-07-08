@@ -3,6 +3,7 @@ package detect
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/tools/go/packages"
@@ -18,13 +19,25 @@ type Flags struct {
 	Tags    string
 	Format  string
 	Exclude []string
+	FailOn  string
 }
 
+// argRoot resolves the optional path argument to the directory the
+// loader should run in. The idiomatic Go tool pattern `./...` (and
+// any `dir/...` suffix) is accepted and reduced to the directory —
+// recursion is always implicit.
 func argRoot(args []string) string {
-	if len(args) == 1 {
-		return args[0]
+	if len(args) != 1 {
+		return "."
 	}
-	return "."
+	root := args[0]
+	if strings.HasSuffix(root, "...") {
+		root = strings.TrimSuffix(strings.TrimSuffix(root, "..."), "/")
+		if root == "" {
+			root = "."
+		}
+	}
+	return root
 }
 
 // runScan is the shared body of every subcommand: load packages,
@@ -34,6 +47,16 @@ func argRoot(args []string) string {
 // a broken package must be distinguishable from a clean one.
 func runScan(f *Flags, args []string, scan func(root string, pkgs []*packages.Package) []audit.Finding) error {
 	root := argRoot(args)
+	info, err := os.Stat(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("path %q does not exist", root)
+		}
+		return fmt.Errorf("cannot access %q: %w", root, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%q is not a directory (lagotto takes a directory; subdirectories are always included)", root)
+	}
 	pkgs, loadErrs, err := pkgload.Load(root, f.Tags, f.Exclude)
 	if err != nil {
 		return err
@@ -47,12 +70,31 @@ func runScan(f *Flags, args []string, scan func(root string, pkgs []*packages.Pa
 	if len(loadErrs) > 0 {
 		fmt.Fprintf(os.Stderr, "lagotto: warning: %d package load error(s); findings may be incomplete\n", len(loadErrs))
 	}
-	return audit.Emit(&audit.Report{
+	report := &audit.Report{
 		Root:       root,
 		Tags:       audit.ResolvedTags(f.Tags),
 		LoadErrors: loadErrs,
 		Findings:   scan(root, pkgs),
-	}, f.Format)
+	}
+	if err := audit.Emit(report, f.Format); err != nil {
+		return err
+	}
+	if f.FailOn != "" {
+		threshold, ok := audit.ParseSeverity(f.FailOn)
+		if !ok {
+			return fmt.Errorf("unknown --fail-on severity %q (critical|high|medium|low)", f.FailOn)
+		}
+		count := 0
+		for _, fd := range report.Findings {
+			if fd.Severity.AtLeast(threshold) {
+				count++
+			}
+		}
+		if count > 0 {
+			return &audit.FindingsError{Count: count, Threshold: threshold}
+		}
+	}
+	return nil
 }
 
 // AuditCmd returns the `audit` subcommand: run every detector and

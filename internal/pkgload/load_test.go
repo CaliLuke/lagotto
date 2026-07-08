@@ -104,3 +104,16 @@ func TestLoadReportsPackageErrors(t *testing.T) {
 		t.Errorf("load error should name the package: %q", loadErrs[0])
 	}
 }
+
+func TestValidateTags(t *testing.T) {
+	for _, ok := range []string{"", "cgo", "cgo,typedb", "go1.21", "my_tag"} {
+		if err := ValidateTags(ok); err != nil {
+			t.Errorf("ValidateTags(%q): unexpected error %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"cgo,", ",cgo", "!!bad tag", "a b", "x;y"} {
+		if err := ValidateTags(bad); err == nil {
+			t.Errorf("ValidateTags(%q): expected error", bad)
+		}
+	}
+}

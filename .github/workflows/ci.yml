@@ -25,6 +25,6 @@ jobs:
         run: go test -race -count=1 ./...
       - name: self-audit
         run: |
+          set -o pipefail
           go build -o lagotto ./cmd/lagotto
-          ./lagotto audit --format=text . | tee findings.out
-          ! grep -q "^\[" findings.out
+          ./lagotto audit --format=text --fail-on=low . | tee findings.out

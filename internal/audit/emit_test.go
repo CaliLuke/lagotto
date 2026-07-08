@@ -3,6 +3,7 @@ package audit
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"testing"
 )
@@ -56,5 +57,46 @@ func TestEmitJSONIncludesLoadErrors(t *testing.T) {
 	}
 	if len(decoded.LoadErrors) != 1 || decoded.LoadErrors[0] != "pkg: boom" {
 		t.Errorf("load_errors not round-tripped: %#v", decoded.LoadErrors)
+	}
+}
+
+func TestValidateFormat(t *testing.T) {
+	if err := ValidateFormat("json"); err != nil {
+		t.Error(err)
+	}
+	if err := ValidateFormat("text"); err != nil {
+		t.Error(err)
+	}
+	if err := ValidateFormat("jsn"); err == nil {
+		t.Error("expected error for unknown format")
+	}
+}
+
+// failWriter errors after n bytes, simulating a full disk or closed
+// pipe mid-report.
+type failWriter struct{ left int }
+
+func (w *failWriter) Write(p []byte) (int, error) {
+	if len(p) > w.left {
+		n := w.left
+		w.left = 0
+		return n, errWriteFailed
+	}
+	w.left -= len(p)
+	return len(p), nil
+}
+
+var errWriteFailed = errors.New("write failed")
+
+func TestEmitTextPropagatesWriteErrors(t *testing.T) {
+	r := &Report{Root: ".", Findings: []Finding{{
+		Smell: "X", SmellID: "G0", Severity: SevLow,
+		Location: "loc", Message: "msg", Suggestion: "do things",
+	}}}
+	if err := emitText(&failWriter{left: 10}, r); !errors.Is(err, errWriteFailed) {
+		t.Errorf("expected write error to propagate, got %v", err)
+	}
+	if err := emitText(&bytes.Buffer{}, r); err != nil {
+		t.Errorf("unexpected error on healthy writer: %v", err)
 	}
 }

@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `--fail-on=<severity>` flag: exit 2 when any finding at or above
+  the threshold (`critical|high|medium|low`) exists, so CI and
+  tooling get a real exit-code signal instead of grepping the text
+  output. `check.sh` and the CI self-audit now use it. (#36)
+
 ### Fixed
+
+- Runtime errors print once (`lagotto: <error>`) instead of twice
+  with a full usage dump; `--tags` values are validated up front so
+  raw `go list` plumbing no longer leaks. (#22)
+- `lagotto audit ./...` and other `dir/...` arguments now work — the
+  `...` suffix is accepted and recursion remains implicit. Missing
+  paths and file arguments get clear one-line errors instead of
+  cryptic chdir/fork failures. (#23)
+- `--format` is validated before packages are loaded, so a typo
+  fails in milliseconds instead of after a full typecheck. (#24)
+- The text emitter propagates write errors: a truncated report
+  (full disk, closed pipe) now fails the run instead of exiting 0.
+  (#34)
+- The CI self-audit step uses `pipefail`, so a lagotto crash can no
+  longer be masked by the pipe into `tee`. (#35)
 
 - G6 (facades) no longer panics on a method declared with an empty
   receiver list (`func () F() ...`), which `go/parser` accepts with

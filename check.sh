@@ -51,10 +51,9 @@ report "go test -race" $?
 
 printf '\n--- self-audit ---\n'
 go build -o /tmp/lagotto-selfcheck ./cmd/lagotto && \
-  /tmp/lagotto-selfcheck audit --format=text . | tee /tmp/lagotto-selfcheck.out && \
-  ! grep -q "^\[" /tmp/lagotto-selfcheck.out
+  /tmp/lagotto-selfcheck audit --format=text --fail-on=low .
 report "lagotto on lagotto" $?
-rm -f /tmp/lagotto-selfcheck /tmp/lagotto-selfcheck.out
+rm -f /tmp/lagotto-selfcheck
 
 printf '\n=========================================\n'
 printf '  %d passed  %d failed\n' "$PASS" "$FAIL"

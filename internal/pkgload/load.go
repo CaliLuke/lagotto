@@ -49,6 +49,33 @@ func Load(root, tags string, exclude []string) ([]*packages.Package, []string, e
 	return out, loadErrs, nil
 }
 
+// ValidateTags rejects malformed --tags values before they are handed
+// to the go toolchain, whose own error ("go: -tags space-separated
+// list contains comma") leaks build plumbing the user never invoked.
+// Accepts the empty string (no tags) and comma-separated identifiers
+// of letters, digits, underscores, and dots.
+func ValidateTags(tags string) error {
+	if tags == "" {
+		return nil
+	}
+	for _, tag := range strings.Split(tags, ",") {
+		if tag == "" {
+			return fmt.Errorf("--tags %q contains an empty tag (use comma-separated names, e.g. cgo,typedb)", tags)
+		}
+		for _, r := range tag {
+			if !isTagRune(r) {
+				return fmt.Errorf("invalid build tag %q (tags are letters, digits, '_' and '.')", tag)
+			}
+		}
+	}
+	return nil
+}
+
+func isTagRune(r rune) bool {
+	return r == '_' || r == '.' ||
+		('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z') || ('0' <= r && r <= '9')
+}
+
 // ShouldExclude reports whether any non-empty pattern in exclude
 // matches a run of complete path segments in path. Matching is
 // segment-anchored, not substring: "gen" excludes "a/gen/b" but not
