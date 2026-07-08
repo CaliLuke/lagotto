@@ -1,7 +1,11 @@
 package detect
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/spf13/cobra"
+	"golang.org/x/tools/go/packages"
 
 	"github.com/CaliLuke/lagotto/internal/audit"
 	"github.com/CaliLuke/lagotto/internal/pkgload"
@@ -23,6 +27,34 @@ func argRoot(args []string) string {
 	return "."
 }
 
+// runScan is the shared body of every subcommand: load packages,
+// surface load problems on stderr and in the report envelope, run the
+// detector(s), emit. Load errors do not abort the run — detectors
+// still report on whatever type-checked — but they are never silent:
+// a broken package must be distinguishable from a clean one.
+func runScan(f *Flags, args []string, scan func(root string, pkgs []*packages.Package) []audit.Finding) error {
+	root := argRoot(args)
+	pkgs, loadErrs, err := pkgload.Load(root, f.Tags, f.Exclude)
+	if err != nil {
+		return err
+	}
+	if len(pkgs) == 0 {
+		fmt.Fprintf(os.Stderr, "lagotto: warning: no Go packages found under %q\n", root)
+	}
+	for _, le := range loadErrs {
+		fmt.Fprintln(os.Stderr, "lagotto: load error:", le)
+	}
+	if len(loadErrs) > 0 {
+		fmt.Fprintf(os.Stderr, "lagotto: warning: %d package load error(s); findings may be incomplete\n", len(loadErrs))
+	}
+	return audit.Emit(&audit.Report{
+		Root:       root,
+		Tags:       audit.ResolvedTags(f.Tags),
+		LoadErrors: loadErrs,
+		Findings:   scan(root, pkgs),
+	}, f.Format)
+}
+
 // AuditCmd returns the `audit` subcommand: run every detector and
 // emit the aggregated report.
 func AuditCmd(f *Flags) *cobra.Command {
@@ -31,21 +63,18 @@ func AuditCmd(f *Flags) *cobra.Command {
 		Short: "Run all smell detectors and emit findings.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			root := argRoot(args)
-			pkgs, err := pkgload.Load(root, f.Tags, f.Exclude)
-			if err != nil {
-				return err
-			}
-			report := &audit.Report{Root: root, Tags: audit.ResolvedTags(f.Tags)}
-			report.Findings = append(report.Findings, ScanReceivers(pkgs)...)
-			report.Findings = append(report.Findings, ScanStutter(pkgs)...)
-			report.Findings = append(report.Findings, ScanFacades(pkgs)...)
-			report.Findings = append(report.Findings, ScanDepsBag(pkgs)...)
-			report.Findings = append(report.Findings, ScanMixedConcern(pkgs)...)
-			report.Findings = append(report.Findings, ScanInitCoupling(pkgs)...)
-			report.Findings = append(report.Findings, ScanReExportTunnel(pkgs)...)
-			report.Findings = append(report.Findings, ScanFS(root, pkgs, f.Exclude)...)
-			return audit.Emit(report, f.Format)
+			return runScan(f, args, func(root string, pkgs []*packages.Package) []audit.Finding {
+				var findings []audit.Finding
+				findings = append(findings, ScanReceivers(pkgs)...)
+				findings = append(findings, ScanStutter(pkgs)...)
+				findings = append(findings, ScanFacades(pkgs)...)
+				findings = append(findings, ScanDepsBag(pkgs)...)
+				findings = append(findings, ScanMixedConcern(pkgs)...)
+				findings = append(findings, ScanInitCoupling(pkgs)...)
+				findings = append(findings, ScanReExportTunnel(pkgs)...)
+				findings = append(findings, ScanFS(root, pkgs, f.Exclude)...)
+				return findings
+			})
 		},
 	}
 }
@@ -57,16 +86,9 @@ func MonolithsCmd(f *Flags) *cobra.Command {
 		Short: "Find Receiver Monoliths and Decomposition Theatre.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			root := argRoot(args)
-			pkgs, err := pkgload.Load(root, f.Tags, f.Exclude)
-			if err != nil {
-				return err
-			}
-			return audit.Emit(&audit.Report{
-				Root:     root,
-				Tags:     audit.ResolvedTags(f.Tags),
-				Findings: ScanReceivers(pkgs),
-			}, f.Format)
+			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding {
+				return ScanReceivers(pkgs)
+			})
 		},
 	}
 }
@@ -78,16 +100,9 @@ func StutterCmd(f *Flags) *cobra.Command {
 		Short: "Find exported names that stutter on the package name.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			root := argRoot(args)
-			pkgs, err := pkgload.Load(root, f.Tags, f.Exclude)
-			if err != nil {
-				return err
-			}
-			return audit.Emit(&audit.Report{
-				Root:     root,
-				Tags:     audit.ResolvedTags(f.Tags),
-				Findings: ScanStutter(pkgs),
-			}, f.Format)
+			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding {
+				return ScanStutter(pkgs)
+			})
 		},
 	}
 }
@@ -99,16 +114,9 @@ func FacadesCmd(f *Flags) *cobra.Command {
 		Short: "Find Facade Methods (thin pass-throughs to subpackage funcs).",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			root := argRoot(args)
-			pkgs, err := pkgload.Load(root, f.Tags, f.Exclude)
-			if err != nil {
-				return err
-			}
-			return audit.Emit(&audit.Report{
-				Root:     root,
-				Tags:     audit.ResolvedTags(f.Tags),
-				Findings: ScanFacades(pkgs),
-			}, f.Format)
+			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding {
+				return ScanFacades(pkgs)
+			})
 		},
 	}
 }
@@ -120,16 +128,9 @@ func DepsCmd(f *Flags) *cobra.Command {
 		Short: "Find God Dependency Bag structs.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			root := argRoot(args)
-			pkgs, err := pkgload.Load(root, f.Tags, f.Exclude)
-			if err != nil {
-				return err
-			}
-			return audit.Emit(&audit.Report{
-				Root:     root,
-				Tags:     audit.ResolvedTags(f.Tags),
-				Findings: ScanDepsBag(pkgs),
-			}, f.Format)
+			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding {
+				return ScanDepsBag(pkgs)
+			})
 		},
 	}
 }
@@ -141,16 +142,9 @@ func MixedCmd(f *Flags) *cobra.Command {
 		Short: "Find Mixed-Concern Files (3+ unrelated decl groups).",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			root := argRoot(args)
-			pkgs, err := pkgload.Load(root, f.Tags, f.Exclude)
-			if err != nil {
-				return err
-			}
-			return audit.Emit(&audit.Report{
-				Root:     root,
-				Tags:     audit.ResolvedTags(f.Tags),
-				Findings: ScanMixedConcern(pkgs),
-			}, f.Format)
+			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding {
+				return ScanMixedConcern(pkgs)
+			})
 		},
 	}
 }
@@ -162,16 +156,9 @@ func InitsCmd(f *Flags) *cobra.Command {
 		Short: "Find Init Coupling (multiple init() funcs across files).",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			root := argRoot(args)
-			pkgs, err := pkgload.Load(root, f.Tags, f.Exclude)
-			if err != nil {
-				return err
-			}
-			return audit.Emit(&audit.Report{
-				Root:     root,
-				Tags:     audit.ResolvedTags(f.Tags),
-				Findings: ScanInitCoupling(pkgs),
-			}, f.Format)
+			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding {
+				return ScanInitCoupling(pkgs)
+			})
 		},
 	}
 }
@@ -183,16 +170,9 @@ func TunnelCmd(f *Flags) *cobra.Command {
 		Short: "Find Internal Re-Export Tunnels (packages whose only role is re-exporting from a deeper package).",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			root := argRoot(args)
-			pkgs, err := pkgload.Load(root, f.Tags, f.Exclude)
-			if err != nil {
-				return err
-			}
-			return audit.Emit(&audit.Report{
-				Root:     root,
-				Tags:     audit.ResolvedTags(f.Tags),
-				Findings: ScanReExportTunnel(pkgs),
-			}, f.Format)
+			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding {
+				return ScanReExportTunnel(pkgs)
+			})
 		},
 	}
 }
@@ -204,16 +184,9 @@ func FSCmd(f *Flags) *cobra.Command {
 		Short: "Find filesystem-level smells (prefix cluster, shadow suffix, build-tag pair sprawl, premature package, junk drawer).",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			root := argRoot(args)
-			pkgs, err := pkgload.Load(root, f.Tags, f.Exclude)
-			if err != nil {
-				return err
-			}
-			return audit.Emit(&audit.Report{
-				Root:     root,
-				Tags:     audit.ResolvedTags(f.Tags),
-				Findings: ScanFS(root, pkgs, f.Exclude),
-			}, f.Format)
+			return runScan(f, args, func(root string, pkgs []*packages.Package) []audit.Finding {
+				return ScanFS(root, pkgs, f.Exclude)
+			})
 		},
 	}
 }

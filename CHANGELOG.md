@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- G6 (facades) no longer panics on a method declared with an empty
+  receiver list (`func () F() ...`), which `go/parser` accepts with
+  only a soft type error. Such methods are skipped. (#11)
+- Per-package load and type errors are no longer swallowed. They are
+  printed to stderr (`lagotto: load error: ...`) with a summary
+  warning, and echoed in a new `load_errors` array in the JSON report
+  envelope, so a broken package is distinguishable from a clean one.
+  A path containing no Go packages also warns instead of silently
+  emitting an empty report. (#9)
+- `--exclude` patterns now match whole path segments instead of
+  substrings: the default `gen` no longer silently drops packages
+  like `agent`, `engine`, or `legend`, and `vendor` no longer drops
+  `vendorfeed`. Multi-segment patterns (`design/generated`) match a
+  consecutive segment run. (#7, #10)
+- Empty reports emit `"findings": []` instead of `"findings": null`,
+  so JSON consumers can iterate findings without a null special
+  case. (#6, #27)
+
 ## [0.1.2] - 2026-05-21
 
 ### Fixed

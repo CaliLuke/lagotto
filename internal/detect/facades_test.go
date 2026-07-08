@@ -71,3 +71,24 @@ func (w *Wrap) Compute(n int) int {
 		t.Fatalf("did not expect G6 for substantive method, got %+v", findings)
 	}
 }
+
+// TestG6_EmptyReceiverList_NoPanic guards against the crash from
+// issue #11: go/parser accepts `func () F() ...` (Recv != nil but
+// len(Recv.List) == 0) with only a soft type error, and the scanner
+// must skip it instead of panicking on Recv.List[0].
+func TestG6_EmptyReceiverList_NoPanic(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"go.mod":         "module example.com/test\ngo 1.21\n",
+		"inner/inner.go": "package inner\n\nfunc Compute(n int) int { return n + 1 }\n",
+		"outer/outer.go": `package outer
+
+import "example.com/test/inner"
+
+func () Compute(n int) int { return inner.Compute(n) }
+`,
+	})
+	findings := ScanFacades(pkgs)
+	if containsID(findings, "G6") {
+		t.Fatalf("did not expect G6 for receiverless method, got %v", findingIDs(findings))
+	}
+}

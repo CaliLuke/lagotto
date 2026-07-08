@@ -28,7 +28,7 @@ reviewer, with JSON output for machine consumption.`,
 
 	rootCmd.PersistentFlags().StringVar(&flags.Tags, "tags", "", "comma-separated build tags (e.g., cgo,typedb)")
 	rootCmd.PersistentFlags().StringVar(&flags.Format, "format", "json", "output format: json | text")
-	rootCmd.PersistentFlags().StringSliceVar(&flags.Exclude, "exclude", []string{"gen", "vendor", "third_party", "design/generated"}, "path substrings to exclude")
+	rootCmd.PersistentFlags().StringSliceVar(&flags.Exclude, "exclude", []string{"gen", "vendor", "third_party", "design/generated"}, "path segments to exclude (matches whole segments: \"gen\" skips a/gen/b but not a/agent/b)")
 
 	rootCmd.AddCommand(
 		detect.AuditCmd(flags),

@@ -12,6 +12,9 @@ import (
 // Findings are sorted by severity, smell ID, then location for stable
 // output across runs.
 func Emit(report *Report, format string) error {
+	if report.Findings == nil {
+		report.Findings = []Finding{}
+	}
 	sort.SliceStable(report.Findings, func(i, j int) bool {
 		ri, rj := sevRank(report.Findings[i].Severity), sevRank(report.Findings[j].Severity)
 		if ri != rj {

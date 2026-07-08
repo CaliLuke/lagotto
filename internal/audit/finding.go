@@ -26,8 +26,12 @@ type Finding struct {
 // Report is the top-level audit envelope written to stdout. Root is
 // the path the audit was run against, Tags echoes the build tags the
 // loader used, and Findings is severity-sorted (CRITICAL first).
+// LoadErrors carries per-package load/type errors so JSON consumers
+// can tell a clean audit from a degraded one; when it is non-empty,
+// detectors may have skipped the affected packages.
 type Report struct {
-	Root     string    `json:"root"`
-	Tags     []string  `json:"tags,omitempty"`
-	Findings []Finding `json:"findings"`
+	Root       string    `json:"root"`
+	Tags       []string  `json:"tags,omitempty"`
+	LoadErrors []string  `json:"load_errors,omitempty"`
+	Findings   []Finding `json:"findings"`
 }

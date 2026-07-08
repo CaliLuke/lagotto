@@ -42,7 +42,7 @@ func ScanFacades(pkgs []*packages.Package) []audit.Finding {
 			}
 			for _, decl := range file.Decls {
 				fn, ok := decl.(*ast.FuncDecl)
-				if !ok || fn.Recv == nil || fn.Body == nil {
+				if !ok || fn.Recv == nil || len(fn.Recv.List) == 0 || fn.Body == nil {
 					continue
 				}
 				if isFacade(pkg, fn) {
