@@ -59,26 +59,31 @@ func Emit(report *Report, format string) error {
 // report (full disk, closed pipe) fails the run instead of exiting 0.
 func emitText(w io.Writer, r *Report) error {
 	bw := bufio.NewWriter(w)
-	fmt.Fprintf(bw, "Lagotto audit — %s\n", r.Root)
-	if len(r.Tags) > 0 {
-		fmt.Fprintf(bw, "Build tags: %s\n", strings.Join(r.Tags, ","))
+	// bufio's write error is sticky, so per-line errors discarded here
+	// resurface from Flush.
+	p := func(format string, a ...any) {
+		_, _ = fmt.Fprintf(bw, format, a...)
 	}
-	fmt.Fprintf(bw, "%d findings\n\n", len(r.Findings))
+	p("Lagotto audit — %s\n", r.Root)
+	if len(r.Tags) > 0 {
+		p("Build tags: %s\n", strings.Join(r.Tags, ","))
+	}
+	p("%d findings\n\n", len(r.Findings))
 	for _, f := range r.Findings {
-		fmt.Fprintf(bw, "[%s] %s (%s)\n", f.Severity, f.Smell, f.SmellID)
-		fmt.Fprintf(bw, "  location: %s\n", f.Location)
-		fmt.Fprintf(bw, "  %s\n", f.Message)
+		p("[%s] %s (%s)\n", f.Severity, f.Smell, f.SmellID)
+		p("  location: %s\n", f.Location)
+		p("  %s\n", f.Message)
 		if len(f.Evidence) > 0 {
 			ev, err := json.Marshal(f.Evidence)
 			if err != nil {
 				return fmt.Errorf("marshal evidence for %s: %w", f.Location, err)
 			}
-			fmt.Fprintf(bw, "  evidence: %s\n", ev)
+			p("  evidence: %s\n", ev)
 		}
 		if f.Suggestion != "" {
-			fmt.Fprintf(bw, "  suggestion: %s\n", f.Suggestion)
+			p("  suggestion: %s\n", f.Suggestion)
 		}
-		fmt.Fprintln(bw)
+		p("\n")
 	}
 	return bw.Flush()
 }
