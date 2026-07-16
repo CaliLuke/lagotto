@@ -17,10 +17,9 @@ import (
 )
 
 // ScanFS aggregates every filesystem-level smell (G3, G9, G10, G11,
-// G12) for each package directory under root. Filesystem detectors
-// reason about directory listings, not AST; the loaded packages are
-// only used to determine the directory set, with a filesystem walk
-// fallback when no packages were loaded.
+// G12) for each package directory under root. It walks the filesystem
+// directly because a loaded package only exposes files selected for
+// the current build tags. The pkgs parameter remains for API stability.
 func ScanFS(root string, pkgs []*packages.Package, exclude []string) []audit.Finding {
 	dirs := collectPackageDirs(root, pkgs, exclude)
 	var findings []audit.Finding
