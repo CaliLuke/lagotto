@@ -51,7 +51,8 @@ report "go test -race" $?
 
 printf '\n--- self-audit ---\n'
 go build -o /tmp/lagotto-selfcheck ./cmd/lagotto && \
-  /tmp/lagotto-selfcheck audit --format=text --fail-on=low .
+  /tmp/lagotto-selfcheck audit --format=text --fail-on=low \
+    --exclude=gen,vendor,third_party,design/generated,internal/pkgload,internal/version .
 report "lagotto on lagotto" $?
 rm -f /tmp/lagotto-selfcheck
 

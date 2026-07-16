@@ -3,11 +3,42 @@ package detect
 import (
 	"go/ast"
 	"go/types"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
 )
+
+func skipSourceFile(filename string, file *ast.File) bool {
+	return strings.HasSuffix(filename, "_test.go") || (file != nil && ast.IsGenerated(file))
+}
+
+func sourceLocation(pkg *packages.Package, filename string) string {
+	if pkg != nil {
+		location := packageLocation(pkg)
+		if location == "." || location == "" {
+			return filepath.Base(filename)
+		}
+		return filepath.ToSlash(filepath.Join(location, filepath.Base(filename)))
+	}
+	return filepath.Base(filename)
+}
+
+func packageLocation(pkg *packages.Package) string {
+	if pkg == nil {
+		return ""
+	}
+	if pkg.Module != nil && pkg.Module.Path != "" {
+		if pkg.PkgPath == pkg.Module.Path {
+			return "."
+		}
+		if rel, ok := strings.CutPrefix(pkg.PkgPath, pkg.Module.Path+"/"); ok {
+			return rel
+		}
+	}
+	return pkg.PkgPath
+}
 
 // receiverTypeName returns the receiver type name for a method's
 // receiver field, using TypesInfo for accurate resolution. Strips
@@ -24,6 +55,7 @@ func receiverTypeName(info *types.Info, recv *ast.Field) string {
 	if ptr, ok := t.(*types.Pointer); ok {
 		t = ptr.Elem()
 	}
+	t = types.Unalias(t)
 	named, ok := t.(*types.Named)
 	if !ok {
 		return ""
@@ -107,16 +139,16 @@ func firstFilename(pkg *packages.Package) string {
 // go/packages does not guarantee GoFiles and Syntax have identical lengths for
 // every loaded package shape, so detectors must not index GoFiles directly.
 func syntaxFilename(pkg *packages.Package, i int, file *ast.File) string {
-	if i >= 0 && i < len(pkg.GoFiles) {
-		return pkg.GoFiles[i]
+	if pkg.Fset != nil && file != nil {
+		if pos := pkg.Fset.Position(file.Pos()); pos.Filename != "" {
+			return pos.Filename
+		}
 	}
 	if i >= 0 && i < len(pkg.CompiledGoFiles) {
 		return pkg.CompiledGoFiles[i]
 	}
-	if pkg.Fset != nil && file != nil {
-		if pos := pkg.Fset.Position(file.Package); pos.Filename != "" {
-			return pos.Filename
-		}
+	if i >= 0 && i < len(pkg.GoFiles) {
+		return pkg.GoFiles[i]
 	}
 	return firstFilename(pkg)
 }

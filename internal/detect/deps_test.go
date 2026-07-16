@@ -75,3 +75,36 @@ type Deps struct {
 		t.Fatalf("did not expect G4 for single-domain Deps, got %+v", findings)
 	}
 }
+
+func TestG4_AliasesAndMapKeysContributePackages(t *testing.T) {
+	files := map[string]string{"go.mod": "module example.com/test\ngo 1.23\n"}
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		files[name+"/type.go"] = "package " + name + "\n\ntype Service struct{}\n"
+	}
+	files["app/deps.go"] = `package app
+
+import (
+	"example.com/test/a"
+	"example.com/test/b"
+	"example.com/test/c"
+	"example.com/test/d"
+	"example.com/test/e"
+)
+
+type Alias = a.Service
+type Deps struct {
+	A *Alias
+	B *b.Service
+	C *c.Service
+	D *d.Service
+	E map[*e.Service]*a.Service
+	F *b.Service
+	G *c.Service
+	H *d.Service
+}
+`
+	findings := ScanDepsBag(fakeModule(t, files))
+	if !containsID(findings, "G4") {
+		t.Fatalf("expected aliases and map keys to count toward G4, got %v", findingIDs(findings))
+	}
+}

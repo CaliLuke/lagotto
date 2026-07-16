@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -153,5 +154,34 @@ func E(h *Holder) *Sub { return r2[h] }
 	findings := scanHiddenHolders(pkgs[0])
 	if !containsID(findings, "G1D") {
 		t.Fatalf("expected G1D for raw pointer-keyed map registries, got %v", findingIDs(findings))
+	}
+	if strings.Contains(findings[0].Message, "sync.Map registries") {
+		t.Fatalf("raw-map finding must not claim all registries are sync.Map: %q", findings[0].Message)
+	}
+}
+
+func TestG1D_AliasedRegistryAndHolder_Fires(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"go.mod": "module example.com/test\ngo 1.23\n",
+		"a.go": `package foo
+
+import "sync"
+
+type Holder struct{}
+type HolderAlias = Holder
+type Registry = sync.Map
+type Sub struct{}
+var r1 Registry
+var r2 Registry
+var r3 Registry
+func A(*HolderAlias) *Sub { return nil }
+func B(*HolderAlias) *Sub { return nil }
+func C(*HolderAlias) *Sub { return nil }
+func D(*HolderAlias) *Sub { return nil }
+func E(*HolderAlias) *Sub { return nil }
+`,
+	})
+	if findings := ScanReceivers(pkgs); !containsID(findings, "G1D") {
+		t.Fatalf("expected aliases to be transparent to G1D, got %v", findingIDs(findings))
 	}
 }

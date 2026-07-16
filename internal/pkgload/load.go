@@ -21,7 +21,7 @@ import (
 func Load(root, tags string, exclude []string) ([]*packages.Package, []string, error) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
-			packages.NeedImports | packages.NeedDeps | packages.NeedTypes |
+			packages.NeedImports | packages.NeedTypes |
 			packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedModule,
 		Dir:   root,
 		Tests: false,

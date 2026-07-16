@@ -9,7 +9,7 @@ The smells are not all equally bad. Use the severity in the
 order below as the suggested remediation order when a single package
 trips multiple detectors.
 
-## The big four (always fix first)
+## The big five (always fix first)
 
 Type-design problems. File reshuffling cannot resolve them, so they
 gate every other improvement.
@@ -24,6 +24,8 @@ gate every other improvement.
 - [G1D — Hidden Holder via Registry](g1d-hidden-holder.md): a
   thin holder paired with package-level `sync.Map` registries
   keyed by the holder's pointer.
+- [G1E — Foreign Holder](g1e-foreign-holder.md): a broad holder that
+  remains in production signatures after its services moved out.
 - [G4 — God Dependency Bag](g4-god-dependency-bag.md): a `Deps`
   struct that mixes types from many unrelated packages.
 
@@ -56,4 +58,4 @@ Lower-priority polish, but each finding is concrete.
 - [G7 — Init Coupling](g7-init-coupling.md): multiple `init()`
   funcs across files with cross-file ordering surface.
 - [G8 — Internal Re-Export Tunnel](g8-internal-re-export-tunnel.md):
-  a package whose only role is to re-export from a deeper package.
+  a package whose exported surface is dominated by a deeper package.

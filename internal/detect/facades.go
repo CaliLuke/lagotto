@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
-	"path/filepath"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -37,7 +36,7 @@ func ScanFacades(pkgs []*packages.Package) []audit.Finding {
 		}
 		for i, file := range pkg.Syntax {
 			fname := syntaxFilename(pkg, i, file)
-			if strings.HasSuffix(fname, "_test.go") {
+			if skipSourceFile(fname, file) {
 				continue
 			}
 			for _, decl := range file.Decls {
@@ -47,23 +46,41 @@ func ScanFacades(pkgs []*packages.Package) []audit.Finding {
 				}
 				if isFacade(pkg, fn) {
 					recv := receiverTypeName(pkg.TypesInfo, fn.Recv.List[0])
+					target := delegateTarget(pkg, fn)
+					sev := audit.SevMedium
+					suggestion := "Delete the facade method. Update callers to invoke the subpackage function directly. If the receiver type is part of an interface contract that callers depend on, narrow that interface or split it; do not retain the facade."
+					classification := "pure_pass_through"
+					if receiverEmbedsExternalInterface(pkg, recv) {
+						sev = audit.SevLow
+						classification = "interface_dispatch"
+						suggestion = "This receiver embeds an external interface, so the method may be a load-bearing adapter. Keep it if callers rely on that interface contract; otherwise remove the pass-through and call the underlying package directly."
+					} else if callUsesReceiverState(fn) {
+						sev = audit.SevLow
+						classification = "state_binding"
+						suggestion = "This method binds receiver state into the delegated call. Keep it if that state is intentionally encapsulated; otherwise expose a narrower underlying type or move the behavior to the package that owns the state."
+					} else if isStandardLibraryTarget(target) {
+						sev = audit.SevLow
+						classification = "stdlib_boundary"
+						suggestion = "This is a small standard-library boundary and may be an intentional test seam. Keep it when it provides a stable contract; otherwise call the standard-library function directly."
+					}
 					findings = append(findings, audit.Finding{
 						Smell:    "Facade Method",
 						SmellID:  "G6",
-						Severity: audit.SevMedium,
-						Location: fmt.Sprintf("%s:%s.%s", filepath.Base(fname), recv, fn.Name.Name),
-						Message: fmt.Sprintf("Method (%s).%s is a thin pass-through to a function in another package.",
-							recv, fn.Name.Name),
+						Severity: sev,
+						Location: fmt.Sprintf("%s:%s.%s", sourceLocation(pkg, fname), recv, fn.Name.Name),
+						Message: fmt.Sprintf("Method (%s).%s in %s is a thin pass-through to a function in another package.",
+							recv, fn.Name.Name, sourceLocation(pkg, fname)),
 						Evidence: map[string]any{
-							"file":          fname,
-							"receiver":      recv,
-							"method":        fn.Name.Name,
-							"body_stmts":    len(fn.Body.List),
-							"delegates_to":  delegateTarget(pkg, fn),
-							"package":       pkg.PkgPath,
-							"is_unexported": !fn.Name.IsExported(),
+							"file":           fname,
+							"receiver":       recv,
+							"method":         fn.Name.Name,
+							"body_stmts":     len(fn.Body.List),
+							"delegates_to":   target,
+							"classification": classification,
+							"package":        pkg.PkgPath,
+							"is_unexported":  !fn.Name.IsExported(),
 						},
-						Suggestion: "Delete the facade method. Update callers to invoke the subpackage function directly. If the receiver type is part of an interface contract that callers depend on, narrow that interface or split it; do not retain the facade.",
+						Suggestion: suggestion,
 					})
 				}
 			}
@@ -82,6 +99,9 @@ func isFacade(pkg *packages.Package, fn *ast.FuncDecl) bool {
 	}
 	stmts := fn.Body.List
 	if len(stmts) == 0 || len(stmts) > 3 {
+		return false
+	}
+	if pkg.Fset == nil || pkg.Fset.Position(fn.Body.Rbrace).Line-pkg.Fset.Position(fn.Body.Lbrace).Line+1 > 3 {
 		return false
 	}
 	last := stmts[len(stmts)-1]
@@ -144,6 +164,9 @@ func callTargetPackage(pkg *packages.Package, call *ast.CallExpr) string {
 	if !ok {
 		return ""
 	}
+	if _, ok := pkg.TypesInfo.Uses[sel.Sel].(*types.Func); !ok {
+		return ""
+	}
 	return pkgName.Imported().Path()
 }
 
@@ -173,4 +196,77 @@ func isTrivialPrefix(s ast.Stmt) bool {
 		return true
 	}
 	return false
+}
+
+func callUsesReceiverState(fn *ast.FuncDecl) bool {
+	if fn.Body == nil || len(fn.Body.List) == 0 || fn.Recv == nil || len(fn.Recv.List) == 0 || len(fn.Recv.List[0].Names) == 0 {
+		return false
+	}
+	recvName := fn.Recv.List[0].Names[0].Name
+	call := extractDelegateCall(fn.Body.List[len(fn.Body.List)-1])
+	if call == nil {
+		return false
+	}
+	for _, arg := range call.Args {
+		usesState := false
+		ast.Inspect(arg, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if id, ok := sel.X.(*ast.Ident); ok && id.Name == recvName {
+				usesState = true
+				return false
+			}
+			return true
+		})
+		if usesState {
+			return true
+		}
+	}
+	return false
+}
+
+func receiverEmbedsExternalInterface(pkg *packages.Package, recvName string) bool {
+	if pkg.Types == nil {
+		return false
+	}
+	obj := pkg.Types.Scope().Lookup(recvName)
+	if obj == nil {
+		return false
+	}
+	named, ok := types.Unalias(obj.Type()).(*types.Named)
+	if !ok {
+		return false
+	}
+	st, ok := named.Underlying().(*types.Struct)
+	if !ok {
+		return false
+	}
+	for i := 0; i < st.NumFields(); i++ {
+		field := st.Field(i)
+		if !field.Embedded() {
+			continue
+		}
+		t := types.Unalias(field.Type())
+		if ptr, ok := t.(*types.Pointer); ok {
+			t = types.Unalias(ptr.Elem())
+		}
+		if _, ok := t.Underlying().(*types.Interface); !ok {
+			continue
+		}
+		if named, ok := t.(*types.Named); ok && named.Obj().Pkg() != nil && named.Obj().Pkg() != pkg.Types {
+			return true
+		}
+	}
+	return false
+}
+
+func isStandardLibraryTarget(target string) bool {
+	i := strings.LastIndex(target, ".")
+	if i < 0 {
+		return false
+	}
+	pkgPath := target[:i]
+	return pkgPath != "" && !strings.Contains(pkgPath, ".")
 }

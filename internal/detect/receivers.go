@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/go/types/typeutil"
 
 	"github.com/CaliLuke/lagotto/internal/audit"
 )
@@ -26,17 +27,19 @@ import (
 func ScanReceivers(pkgs []*packages.Package) []audit.Finding {
 	var findings []audit.Finding
 	for _, pkg := range pkgs {
-		if pkg.PkgPath == "" {
+		if pkg.PkgPath == "" || isTestPackage(pkg.PkgPath) {
 			continue
 		}
 		if pkg.Types == nil || pkg.Fset == nil {
 			continue
 		}
-		findings = append(findings, scanMethodSets(pkg)...)
+		var cache typeutil.MethodSetCache
+		findings = append(findings, scanMethodSets(pkg, &cache)...)
 		findings = append(findings, scanAliasClusters(pkg)...)
-		findings = append(findings, scanAggregateHolders(pkg)...)
-		findings = append(findings, scanHiddenHolders(pkg)...)
+		findings = append(findings, scanAggregateHolders(pkg, &cache)...)
+		findings = append(findings, scanHiddenHolders(pkg, &cache)...)
 	}
+	findings = append(findings, scanForeignHolders(pkgs)...)
 	return findings
 }
 
@@ -63,10 +66,8 @@ func ScanReceivers(pkgs []*packages.Package) []audit.Finding {
 //
 // Test doubles (Fake/Mock/Stub/Spy types and testutil packages) are
 // skipped, matching G1's filter.
-func scanHiddenHolders(pkg *packages.Package) []audit.Finding {
-	if isTestPackage(pkg.PkgPath) {
-		return nil
-	}
+func scanHiddenHolders(pkg *packages.Package, caches ...*typeutil.MethodSetCache) []audit.Finding {
+	cache := selectMethodSetCache(caches)
 	scope := pkg.Types.Scope()
 
 	registryVars := collectRegistryVars(scope, pkg)
@@ -89,7 +90,7 @@ func scanHiddenHolders(pkg *packages.Package) []audit.Finding {
 		if !ok {
 			continue
 		}
-		ms := types.NewMethodSet(types.NewPointer(named))
+		ms := cache.MethodSet(types.NewPointer(named))
 		ownMethods := 0
 		for i := 0; i < ms.Len(); i++ {
 			if fn, ok := ms.At(i).Obj().(*types.Func); ok && fn.Pkg() == pkg.Types {
@@ -109,8 +110,8 @@ func scanHiddenHolders(pkg *packages.Package) []audit.Finding {
 			Smell:    "Hidden Holder",
 			SmellID:  "G1D",
 			Severity: sev,
-			Location: pkg.PkgPath + " (" + holderName + ")",
-			Message: fmt.Sprintf("Type %s has %d own methods but %d exported package-level functions take *%s as their first argument, with %d package-level sync.Map registries in the same package. The package is reconstructing the holder's API surface via registry maps; callers still receive *%s everywhere, so the receiver split is cosmetic.",
+			Location: packageLocation(pkg) + " (" + holderName + ")",
+			Message: fmt.Sprintf("Type %s has %d own methods but %d exported package-level functions take *%s as their first argument, with %d package-level pointer-keyed registry maps (sync.Map or map[*T]...) in the same package. The package is reconstructing the holder's API surface via registry maps; callers still receive *%s everywhere, so the receiver split is cosmetic.",
 				holderName, ownMethods, len(accessors), holderName, len(registryVars), holderName),
 			Evidence: map[string]any{
 				"package":            pkg.PkgPath,
@@ -150,6 +151,7 @@ func collectRegistryVars(scope *types.Scope, pkg *packages.Package) []string {
 // a pointer type. Both shapes are pointer-keyed lookup tables that
 // behave like per-instance fields on the pointer's pointee.
 func isRegistryType(t types.Type) bool {
+	t = types.Unalias(t)
 	if named, ok := t.(*types.Named); ok {
 		obj := named.Obj()
 		if obj != nil && obj.Pkg() != nil &&
@@ -158,7 +160,7 @@ func isRegistryType(t types.Type) bool {
 		}
 	}
 	if m, ok := t.Underlying().(*types.Map); ok {
-		if _, ptr := m.Key().(*types.Pointer); ptr {
+		if _, ptr := types.Unalias(m.Key()).(*types.Pointer); ptr {
 			return true
 		}
 	}
@@ -180,11 +182,12 @@ func collectHolderAccessors(scope *types.Scope, pkg *packages.Package) map[strin
 		if !ok || sig.Recv() != nil || sig.Params().Len() == 0 {
 			continue
 		}
-		ptr, ok := sig.Params().At(0).Type().(*types.Pointer)
+		paramType := types.Unalias(sig.Params().At(0).Type())
+		ptr, ok := paramType.(*types.Pointer)
 		if !ok {
 			continue
 		}
-		named, ok := ptr.Elem().(*types.Named)
+		named, ok := types.Unalias(ptr.Elem()).(*types.Named)
 		if !ok || named.Obj().Pkg() != pkg.Types {
 			continue
 		}
@@ -209,10 +212,14 @@ func collectHolderAccessors(scope *types.Scope, pkg *packages.Package) map[strin
 // Edges, Search, ... }`). Callers still pass one handle around, so
 // the receiver split isn't real until those sub-services move into
 // their own subpackages and callers take only the one they need.
-func scanAggregateHolders(pkg *packages.Package) []audit.Finding {
+func scanAggregateHolders(pkg *packages.Package, caches ...*typeutil.MethodSetCache) []audit.Finding {
+	cache := selectMethodSetCache(caches)
 	scope := pkg.Types.Scope()
 	var findings []audit.Finding
 	for _, name := range scope.Names() {
+		if isTestDouble(name) {
+			continue
+		}
 		obj := scope.Lookup(name)
 		tn, ok := obj.(*types.TypeName)
 		if !ok || tn.IsAlias() {
@@ -230,9 +237,9 @@ func scanAggregateHolders(pkg *packages.Package) []audit.Finding {
 		totalMethods := 0
 		for i := 0; i < st.NumFields(); i++ {
 			f := st.Field(i)
-			ft := f.Type()
+			ft := types.Unalias(f.Type())
 			if ptr, ok := ft.(*types.Pointer); ok {
-				ft = ptr.Elem()
+				ft = types.Unalias(ptr.Elem())
 			}
 			fnamed, ok := ft.(*types.Named)
 			if !ok {
@@ -244,12 +251,19 @@ func scanAggregateHolders(pkg *packages.Package) []audit.Finding {
 			if _, isStruct := fnamed.Underlying().(*types.Struct); !isStruct {
 				continue
 			}
-			ms := types.NewMethodSet(types.NewPointer(fnamed))
-			if ms.Len() == 0 {
+			ms := cache.MethodSet(types.NewPointer(fnamed))
+			methodCount := 0
+			for j := 0; j < ms.Len(); j++ {
+				fn, ok := ms.At(j).Obj().(*types.Func)
+				if ok && fn.Pkg() == pkg.Types {
+					methodCount++
+				}
+			}
+			if methodCount == 0 {
 				continue
 			}
 			samePkgFields = append(samePkgFields, f.Name()+" *"+fnamed.Obj().Name())
-			totalMethods += ms.Len()
+			totalMethods += methodCount
 		}
 		if len(samePkgFields) < 5 {
 			continue
@@ -266,7 +280,7 @@ func scanAggregateHolders(pkg *packages.Package) []audit.Finding {
 			Smell:    "Aggregate Holder",
 			SmellID:  "G1C",
 			Severity: sev,
-			Location: pkg.PkgPath + " (" + name + ")",
+			Location: packageLocation(pkg) + " (" + name + ")",
 			Message: fmt.Sprintf("Struct %s aggregates %d same-package sub-services with %d total methods. Callers still pass one %s handle, so the receiver split is cosmetic — the sub-services have not moved into their own packages.",
 				name, len(samePkgFields), totalMethods, name),
 			Evidence: map[string]any{
@@ -287,7 +301,8 @@ func scanAggregateHolders(pkg *packages.Package) []audit.Finding {
 // declared in the same package (so we don't flag thin wrappers around
 // external types like *sql.DB), and emits a finding when the type
 // crosses the Receiver Monolith thresholds.
-func scanMethodSets(pkg *packages.Package) []audit.Finding {
+func scanMethodSets(pkg *packages.Package, caches ...*typeutil.MethodSetCache) []audit.Finding {
+	cache := selectMethodSetCache(caches)
 	scope := pkg.Types.Scope()
 	var findings []audit.Finding
 	for _, name := range scope.Names() {
@@ -303,11 +318,11 @@ func scanMethodSets(pkg *packages.Package) []audit.Finding {
 		if _, isStruct := named.Underlying().(*types.Struct); !isStruct {
 			continue
 		}
-		if isTestDouble(name) || isTestPackage(pkg.PkgPath) {
+		if isTestDouble(name) {
 			continue
 		}
 		ptr := types.NewPointer(named)
-		ms := types.NewMethodSet(ptr)
+		ms := cache.MethodSet(ptr)
 		if ms.Len() == 0 {
 			continue
 		}
@@ -347,10 +362,7 @@ func scanMethodSets(pkg *packages.Package) []audit.Finding {
 		// monolith squeezed into 1–2 files is still a monolith;
 		// the original heuristic missed types that had been
 		// "decomposed" by reshuffling files within one package.
-		sev := audit.SevMedium
-		if len(methodNames) >= 15 {
-			sev = audit.SevHigh
-		}
+		sev := audit.SevHigh
 		if len(methodNames) >= 25 || len(files) >= 7 {
 			sev = audit.SevCritical
 		}
@@ -362,13 +374,7 @@ func scanMethodSets(pkg *packages.Package) []audit.Finding {
 		// monolith problem is solved by removing the embedding, not
 		// by reshuffling files.
 		var theatreNote string
-		biggestPromoter, biggestPromoterCount := "", 0
-		for k, v := range promotedFrom {
-			if v > biggestPromoterCount {
-				biggestPromoter = k
-				biggestPromoterCount = v
-			}
-		}
+		biggestPromoter, biggestPromoterCount := dominantPromoter(promotedFrom)
 		if biggestPromoter != "" && biggestPromoterCount*2 > len(methodNames) {
 			theatreNote = fmt.Sprintf(" %d/%d methods are promoted via embedded *%s — removing the embedding is the structural fix, not file moves.",
 				biggestPromoterCount, len(methodNames), biggestPromoter)
@@ -397,7 +403,7 @@ func scanMethodSets(pkg *packages.Package) []audit.Finding {
 			Smell:    "Receiver Monolith",
 			SmellID:  "G1",
 			Severity: sev,
-			Location: filepath.Dir(firstFilename(pkg)) + " (" + name + ")",
+			Location: packageLocation(pkg) + " (" + name + ")",
 			Message: fmt.Sprintf("Type %s has %d methods (effective method set, including promoted) across %d files spanning %d concern groups (%s).%s",
 				name, len(methodNames), len(files), len(concerns), strings.Join(concerns, ", "), theatreNote),
 			Evidence:   ev,
@@ -405,6 +411,24 @@ func scanMethodSets(pkg *packages.Package) []audit.Finding {
 		})
 	}
 	return findings
+}
+
+func dominantPromoter(promotedFrom map[string]int) (string, int) {
+	name, count := "", 0
+	for _, candidate := range sortedKeys(promotedFrom) {
+		if promotedFrom[candidate] > count {
+			name = candidate
+			count = promotedFrom[candidate]
+		}
+	}
+	return name, count
+}
+
+func selectMethodSetCache(caches []*typeutil.MethodSetCache) *typeutil.MethodSetCache {
+	if len(caches) > 0 && caches[0] != nil {
+		return caches[0]
+	}
+	return new(typeutil.MethodSetCache)
 }
 
 // scanAliasClusters reports the alias-cluster Decomposition Theatre
@@ -416,6 +440,9 @@ func scanAliasClusters(pkg *packages.Package) []audit.Finding {
 	scope := pkg.Types.Scope()
 	clusters := map[string][]string{}
 	for _, name := range scope.Names() {
+		if isTestDouble(name) {
+			continue
+		}
 		obj := scope.Lookup(name)
 		tn, ok := obj.(*types.TypeName)
 		if !ok || !tn.IsAlias() {
@@ -435,6 +462,9 @@ func scanAliasClusters(pkg *packages.Package) []audit.Finding {
 		if named.Obj().Pkg() == nil || named.Obj().Pkg() != pkg.Types {
 			continue // alias to external type — not interesting here
 		}
+		if isTestDouble(named.Obj().Name()) {
+			continue
+		}
 		clusters[named.Obj().Name()] = append(clusters[named.Obj().Name()], name)
 	}
 
@@ -452,7 +482,7 @@ func scanAliasClusters(pkg *packages.Package) []audit.Finding {
 			Smell:    "Decomposition Theatre",
 			SmellID:  "G1B",
 			Severity: sev,
-			Location: pkg.PkgPath + " (alias cluster -> " + target + ")",
+			Location: packageLocation(pkg) + " (alias cluster -> " + target + ")",
 			Message: fmt.Sprintf("Package %s declares %d type aliases that all resolve to %s. This is structural fan-out, not decomposition: every alias inherits the same method set on the same struct, so the receiver remains a monolith no matter how many names point at it.",
 				pkg.Name, len(aliases), target),
 			Evidence: map[string]any{

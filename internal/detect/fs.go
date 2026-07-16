@@ -2,6 +2,9 @@ package detect
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,44 +17,37 @@ import (
 )
 
 // ScanFS aggregates every filesystem-level smell (G3, G9, G10, G11,
-// G12) for each package directory under root. Filesystem detectors
-// reason about directory listings, not AST; the loaded packages are
-// only used to determine the directory set, with a filesystem walk
-// fallback when no packages were loaded.
+// G12) for each package directory under root. It walks the filesystem
+// directly because a loaded package only exposes files selected for
+// the current build tags. The pkgs parameter remains for API stability.
 func ScanFS(root string, pkgs []*packages.Package, exclude []string) []audit.Finding {
 	dirs := collectPackageDirs(root, pkgs, exclude)
 	var findings []audit.Finding
 	for _, d := range sortedKeys(dirs) {
-		files := dirs[d]
-		findings = append(findings, prefixClusterFindings(d, files)...)
-		findings = append(findings, shadowSuffixFindings(d, files)...)
-		findings = append(findings, junkDrawerFindings(d, files)...)
-		findings = append(findings, prematurePackageFindings(d, files)...)
-		findings = append(findings, buildTagPairFindings(d, files)...)
+		contents := dirs[d]
+		files := contents.files
+		location := filesystemLocation(root, d)
+		findings = append(findings, prefixClusterFindings(location, files)...)
+		findings = append(findings, shadowSuffixFindings(location, files)...)
+		findings = append(findings, junkDrawerFindings(location, files)...)
+		findings = append(findings, prematurePackageFindings(root, d, location, contents)...)
+		findings = append(findings, buildTagPairFindings(location, contents)...)
 	}
 	return findings
 }
 
-// collectPackageDirs walks the loaded packages and groups non-test
-// .go file basenames by directory, falling back to a filesystem
-// walk if packages.Load returned no packages (e.g., no go.mod).
-func collectPackageDirs(root string, pkgs []*packages.Package, exclude []string) map[string][]string {
-	out := map[string][]string{}
-	if len(pkgs) > 0 {
-		for _, p := range pkgs {
-			if p.PkgPath == "" {
-				continue
-			}
-			for _, f := range p.GoFiles {
-				if strings.HasSuffix(f, "_test.go") {
-					continue
-				}
-				dir := filepath.Dir(f)
-				out[dir] = append(out[dir], filepath.Base(f))
-			}
-		}
-		return out
-	}
+// collectPackageDirs walks the filesystem so mutually exclusive
+// build-tagged files are visible together. Loaded packages are not a
+// reliable directory listing because go/packages filters by build tags.
+type packageDirContents struct {
+	files       []string
+	packageName string
+	buildTagged map[string]bool
+}
+
+func collectPackageDirs(root string, pkgs []*packages.Package, exclude []string) map[string]packageDirContents {
+	_ = pkgs // Package loading selects files by build tags; this detector must not.
+	out := map[string]packageDirContents{}
 	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -65,10 +61,51 @@ func collectPackageDirs(root string, pkgs []*packages.Package, exclude []string)
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		out[filepath.Dir(path)] = append(out[filepath.Dir(path)], filepath.Base(path))
+		fset := token.NewFileSet()
+		file, parseErr := parser.ParseFile(fset, path, nil, parser.PackageClauseOnly|parser.ParseComments)
+		if parseErr != nil || file == nil || ast.IsGenerated(file) {
+			return nil
+		}
+		base := filepath.Base(path)
+		if base == "doc.go" {
+			return nil
+		}
+		dir := filepath.Dir(path)
+		contents := out[dir]
+		contents.files = append(contents.files, base)
+		if contents.packageName == "" && file.Name != nil {
+			contents.packageName = file.Name.Name
+		}
+		if contents.buildTagged == nil {
+			contents.buildTagged = map[string]bool{}
+		}
+		contents.buildTagged[base] = hasBuildConstraint(file)
+		out[dir] = contents
 		return nil
 	})
+	for dir, contents := range out {
+		sort.Strings(contents.files)
+		out[dir] = contents
+	}
 	return out
+}
+
+func hasBuildConstraint(file *ast.File) bool {
+	if file == nil {
+		return false
+	}
+	for _, group := range file.Comments {
+		if group.End() > file.Package {
+			continue
+		}
+		for _, comment := range group.List {
+			text := strings.TrimSpace(comment.Text)
+			if strings.HasPrefix(text, "//go:build ") || strings.HasPrefix(text, "// +build ") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // prefixClusterFindings flags G9 — three or more files in dir that
@@ -80,7 +117,7 @@ func prefixClusterFindings(dir string, files []string) []audit.Finding {
 	for _, f := range files {
 		base := strings.TrimSuffix(f, ".go")
 		idx := strings.IndexAny(base, "_-.")
-		if idx <= 2 {
+		if idx < 2 || hasPlatformSuffix(base) {
 			continue
 		}
 		prefix := base[:idx]
@@ -117,6 +154,22 @@ func prefixClusterFindings(dir string, files []string) []audit.Finding {
 		})
 	}
 	return findings
+}
+
+var platformSuffixes = map[string]bool{
+	"aix": true, "android": true, "darwin": true, "dragonfly": true,
+	"freebsd": true, "illumos": true, "ios": true, "js": true,
+	"linux": true, "netbsd": true, "openbsd": true, "plan9": true,
+	"solaris": true, "wasip1": true, "windows": true,
+	"386": true, "amd64": true, "arm": true, "arm64": true,
+	"loong64": true, "mips": true, "mips64": true, "mips64le": true,
+	"mipsle": true, "ppc64": true, "ppc64le": true, "riscv64": true,
+	"s390x": true, "wasm": true,
+}
+
+func hasPlatformSuffix(base string) bool {
+	i := strings.LastIndexAny(base, "_-.")
+	return i >= 0 && platformSuffixes[base[i+1:]]
 }
 
 var shadowSuffixes = []string{
@@ -193,61 +246,69 @@ func junkDrawerFindings(dir string, files []string) []audit.Finding {
 }
 
 // prematurePackageFindings flags G12 — directories with exactly one
-// non-test source file. The package boundary is providing visibility,
-// not grouping; once it grows naturally the smell self-resolves.
-// `doc.go`-only directories are exempt.
-func prematurePackageFindings(dir string, files []string) []audit.Finding {
-	if len(files) != 1 {
+// non-test, non-generated, non-doc source file. Package main and the
+// audit root are exempt.
+func prematurePackageFindings(root, dir, location string, contents packageDirContents) []audit.Finding {
+	if len(contents.files) != 1 {
 		return nil
 	}
-	if filepath.Clean(dir) == "." {
-		return nil
-	}
-	if files[0] == "doc.go" {
+	if samePath(root, dir) || contents.packageName == "main" {
 		return nil
 	}
 	return []audit.Finding{{
 		Smell:    "Premature Package",
 		SmellID:  "G12",
 		Severity: audit.SevLow,
-		Location: dir,
+		Location: location,
 		Message:  "Directory contains a single source file; the package is providing visibility, not grouping.",
 		Evidence: map[string]any{
-			"dir":  dir,
-			"file": files[0],
+			"dir":  location,
+			"file": contents.files[0],
 		},
-		Suggestion: "Either add more files when the concern grows, or inline the file into the parent package if the visibility boundary isn't load-bearing.",
+		Suggestion: "If this package enforces an intentional visibility boundary, keep it and suppress the directory with --exclude. Otherwise add cohesive siblings as the concern grows or inline the file into the parent package.",
 	}}
 }
 
-// buildTagPairFindings flags G3 — three or more `*_stub.go` /
-// `*.go` paired files. A single pair is a normal Go pattern; once
+func filesystemLocation(root, dir string) string {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return filepath.ToSlash(dir)
+	}
+	return filepath.ToSlash(rel)
+}
+
+func samePath(a, b string) bool {
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	return errA == nil && errB == nil && filepath.Clean(absA) == filepath.Clean(absB)
+}
+
+// buildTagPairFindings flags G3 — three or more `*_stub.go` or
+// `*_cgo.go` variants paired with an unsuffixed file. A single pair is a normal Go pattern; once
 // the pattern recurs across many files the conditional surface is
 // large enough to warrant a sibling subpackage.
-func buildTagPairFindings(dir string, files []string) []audit.Finding {
-	pairs := 0
+func buildTagPairFindings(dir string, contents packageDirContents) []audit.Finding {
 	bases := map[string]bool{}
-	for _, f := range files {
+	for _, f := range contents.files {
 		base := strings.TrimSuffix(f, ".go")
 		bases[base] = true
 	}
-	for base := range bases {
-		if !strings.HasSuffix(base, "_stub") {
-			continue
-		}
-		partner := strings.TrimSuffix(base, "_stub")
-		if bases[partner] {
-			pairs++
+	var pairList []string
+	for _, base := range sortedKeys(bases) {
+		for _, suffix := range []string{"_stub", "_cgo"} {
+			if !strings.HasSuffix(base, suffix) {
+				continue
+			}
+			partner := strings.TrimSuffix(base, suffix)
+			variantFile, partnerFile := base+".go", partner+".go"
+			if bases[partner] && (contents.buildTagged[variantFile] || contents.buildTagged[partnerFile]) {
+				pairList = append(pairList, partnerFile+" + "+variantFile)
+			}
 		}
 	}
+	pairs := len(pairList)
 	if pairs < 3 {
 		return nil
-	}
-	var pairList []string
-	for base := range bases {
-		if strings.HasSuffix(base, "_stub") {
-			pairList = append(pairList, base+".go")
-		}
 	}
 	sort.Strings(pairList)
 	return []audit.Finding{{
@@ -259,7 +320,7 @@ func buildTagPairFindings(dir string, files []string) []audit.Finding {
 			pairs),
 		Evidence: map[string]any{
 			"pairs": pairs,
-			"stubs": pairList,
+			"files": pairList,
 			"dir":   dir,
 		},
 		Suggestion: "Move the stub branch into a sibling subpackage (e.g., cgo/ + nocgo/) and have the parent depend on a shared interface. Each subpackage owns one branch of the build-tag without polluting the directory listing.",

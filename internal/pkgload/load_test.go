@@ -105,6 +105,27 @@ func TestLoadReportsPackageErrors(t *testing.T) {
 	}
 }
 
+func TestLoadDoesNotParseDependencySyntax(t *testing.T) {
+	root := writeModule(t, map[string]string{
+		"go.mod":  "module example.com/deps\ngo 1.23\n",
+		"main.go": "package deps\n\nimport \"fmt\"\n\nfunc F() string { return fmt.Sprint(1) }\n",
+	})
+	pkgs, loadErrs, err := Load(root, "", nil)
+	if err != nil || len(loadErrs) > 0 {
+		t.Fatalf("Load: err=%v loadErrs=%v", err, loadErrs)
+	}
+	if len(pkgs) != 1 {
+		t.Fatalf("expected one audited package, got %d", len(pkgs))
+	}
+	fmtPkg := pkgs[0].Imports["fmt"]
+	if fmtPkg == nil {
+		t.Fatal("expected shallow fmt import metadata")
+	}
+	if len(fmtPkg.Syntax) != 0 {
+		t.Fatalf("dependency syntax was loaded unexpectedly: %d files", len(fmtPkg.Syntax))
+	}
+}
+
 func TestValidateTags(t *testing.T) {
 	for _, ok := range []string{"", "cgo", "cgo,typedb", "go1.21", "my_tag"} {
 		if err := ValidateTags(ok); err != nil {

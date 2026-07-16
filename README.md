@@ -27,7 +27,7 @@ brew install caliluke/tap/lagotto
 ### From source
 
 ```bash
-go install github.com/CaliLuke/lagotto@latest
+go install github.com/CaliLuke/lagotto/cmd/lagotto@latest
 ```
 
 ### Pre-built binary
@@ -69,14 +69,15 @@ flag lagotto always exits 0 when the audit runs).
 | G1B | Decomposition Theatre     | 3+ type aliases in one package all resolving to a single underlying struct                   |
 | G1C | Aggregate Holder          | A struct with 5+ same-package sub-service fields whose pointee method counts total ≥25       |
 | G1D | Hidden Holder             | Thin holder + ≥3 pointer-keyed registry maps + ≥5 exported `*Holder` accessors               |
+| G1E | Foreign Holder            | A decomposed holder still appears in production signatures in downstream packages           |
 | G2  | Stutter Names             | Exported type/function repeats the package name (`lanes.LaneConfig`)                         |
-| G3  | Build-Tag Pair Sprawl     | >2 paired files conditioned by build tags (`*_stub.go` / `*_cgo.go`) in one dir              |
-| G4  | God Dependency Bag        | A `Deps`/`Container` struct mixes >8 dependency types from unrelated packages                |
+| G3  | Build-Tag Pair Sprawl     | ≥3 paired files conditioned by build tags (`*_stub.go` / `*_cgo.go`) in one dir              |
+| G4  | God Dependency Bag        | A `Deps`/`Container` has ≥8 fields drawn from ≥5 distinct external packages                  |
 | G5  | Mixed-Concern File        | A single file holds 3+ unrelated decl groups (types + validation + utilities)                |
 | G6  | Facade Method             | A method whose body is a thin pass-through (≤3 lines) to a function in another package       |
 | G7  | Init Coupling             | Multiple `func init()` in a package with cross-file ordering dependencies                    |
-| G8  | Internal Re-Export Tunnel | A package whose only role is to re-export from a deeper package                              |
-| G9  | Prefix Cluster            | 3+ files share a name prefix in a flat directory                                             |
+| G8  | Internal Re-Export Tunnel | ≥50% of a package's exported declarations re-export from a dominant deeper package           |
+| G9  | Prefix Cluster            | 3+ files share a ≥2-character name prefix in a flat directory                                |
 | G10 | Shadow Suffix             | File names ending in `_helpers`, `_utils`, `_handlers`, `_actions`, `_responses`             |
 | G11 | Junk Drawer               | File named `helpers.go` / `utils.go` / `common.go` / `misc.go` with mixed contents           |
 | G12 | Premature Package         | A directory containing only 1 source file (excluding tests, doc, generated)                  |
@@ -90,7 +91,8 @@ receiver IS the layout boundary. When a layout problem hits this wall,
 the cure is type-level decomposition, not file-level reshuffling.
 
 Two patterns recur whenever someone tries to silence a Receiver Monolith
-warning without doing the structural work. lagotto catches both:
+warning without doing the structural work. lagotto catches the producer-side
+disguises and the downstream caller-side escape:
 
 ### G1B — Decomposition Theatre (alias cluster)
 
@@ -160,6 +162,14 @@ reaches into `t.Nodes.CreateNodes(...)`. The decomposition isn't real
 until the sub-services move into their own subpackages and callers take
 only the narrow service they need.
 
+### G1E — Foreign Holder
+
+Even after sub-services move into real subpackages, a decomposition remains
+cosmetic if downstream functions and structs still accept the broad holder and
+reach through it. G1E identifies holders with at least three subpackage service
+fields or accessors, then reports production signatures in other packages that
+still mention `*Holder`. Constructors and test-fixture packages are exempt.
+
 ### Embedding theatre
 
 ```go
@@ -180,7 +190,7 @@ remove the embedding, not move files.
 Before accepting "the receiver is decomposed", confirm:
 
 1. **Effective method set shrinks.** `lagotto monoliths` no longer
-   reports the original type under G1, G1B, or G1C.
+   reports the original type under G1, G1B, G1C, G1D, or G1E.
 2. **No alias cluster.** `grep -nE '^type \w+ = ' pkg/` shows fewer
    than 3 aliases pointing at one type.
 3. **No same-package aggregate holder.** The old type, if it still
@@ -203,11 +213,12 @@ through type aliases, generics, embedding, and build tags accurately.
 
 - **CRITICAL** — Receiver Monolith ≥25 methods or ≥7 files; Aggregate
   Holder with ≥50 pointee methods or ≥7 sub-services; Decomposition
-  Theatre ≥6 aliases; God Dependency Bag ≥12 fields.
+  Theatre ≥6 aliases; Foreign Holder in ≥5 signatures across ≥3 packages;
+  God Dependency Bag ≥12 fields; Mixed-Concern File ≥600 lines.
 - **HIGH** — Receiver Monolith ≥15 methods; Aggregate Holder 5–6
   sub-services with ≥25 pointee methods; Decomposition Theatre 3–5
-  aliases; Mixed-Concern File >300 lines; God Dependency Bag 8–11
-  fields.
+  aliases; any Foreign Holder escape; Mixed-Concern File 301–599 lines;
+  God Dependency Bag 8–11 fields.
 - **MEDIUM** — Stutter Names; Build-Tag Pair Sprawl; Mixed-Concern File
   100–300 lines; Prefix Cluster of 4+ files; Internal Re-Export Tunnel.
 - **LOW** — Premature Package; Shadow Suffix; Init Coupling; Junk
@@ -221,8 +232,8 @@ through type aliases, generics, embedding, and build tags accurately.
 - `package main` with many files — entry-point packages are exempt.
 - Test doubles (`Fake*`, `Mock*`, `Stub*`, `Spy*`) and `testutil`
   packages, which legitimately implement wide interfaces.
-- Generated files (filter via `--exclude` if your generator emits a
-  recognizable path fragment).
+- Generated files carrying the standard `// Code generated ... DO NOT EDIT.`
+  header.
 
 ## Contributing
 

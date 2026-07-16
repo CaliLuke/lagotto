@@ -1,7 +1,7 @@
 # G12 — Premature Package
 
-A directory contains exactly one source file (excluding tests and
-`doc.go`). The package boundary is providing visibility, not
+A directory contains exactly one source file (excluding tests, generated code,
+and `doc.go`). The package boundary is providing visibility, not
 grouping — and the cost of an extra import path may exceed what
 that visibility buys.
 
@@ -31,6 +31,8 @@ files. A directory with exactly one source file fires, except:
 
 - `doc.go`-only directories (legitimate godoc home)
 - The audit root itself (a tool's `main` package is often one file)
+- `package main` directories (canonical command entry points)
+- generated files with the standard Go generated-code header
 
 | Severity | Condition                              |
 | -------- | -------------------------------------- |
@@ -76,6 +78,10 @@ Two paths:
 2. **Grow the package.** If the visibility boundary does matter,
    the smell will self-resolve as the package gains siblings. The
    finding is just a checkpoint to confirm intent.
+
+An intentional visibility boundary may also be suppressed with
+`--exclude=<path-segment>`; G12 is advisory and should not force inlining a
+load-bearing package boundary.
 
 When the package contains nothing but a single small struct, the
 struct often wants to live in the type system of its caller anyway.

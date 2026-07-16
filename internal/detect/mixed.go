@@ -22,7 +22,7 @@ func ScanMixedConcern(pkgs []*packages.Package) []audit.Finding {
 		}
 		for i, file := range pkg.Syntax {
 			fname := syntaxFilename(pkg, i, file)
-			if strings.HasSuffix(fname, "_test.go") {
+			if skipSourceFile(fname, file) {
 				continue
 			}
 			groups, lineCount := classifyFile(pkg.Fset, file)
@@ -33,7 +33,7 @@ func ScanMixedConcern(pkgs []*packages.Package) []audit.Finding {
 				continue
 			}
 			sev := audit.SevMedium
-			if lineCount >= 300 {
+			if lineCount > 300 {
 				sev = audit.SevHigh
 			}
 			if lineCount >= 600 {
@@ -43,7 +43,7 @@ func ScanMixedConcern(pkgs []*packages.Package) []audit.Finding {
 				Smell:    "Mixed-Concern File",
 				SmellID:  "G5",
 				Severity: sev,
-				Location: filepath.Base(fname),
+				Location: sourceLocation(pkg, fname),
 				Message: fmt.Sprintf("File %s mixes %d decl groups (%s) over %d lines.",
 					filepath.Base(fname), len(groups), strings.Join(groupNames(groups), ", "), lineCount),
 				Evidence: map[string]any{

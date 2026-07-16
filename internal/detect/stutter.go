@@ -28,7 +28,7 @@ func ScanStutter(pkgs []*packages.Package) []audit.Finding {
 		offenders := map[string][]string{}
 		for i, f := range pkg.Syntax {
 			fname := syntaxFilename(pkg, i, f)
-			if strings.HasSuffix(fname, "_test.go") {
+			if skipSourceFile(fname, f) {
 				continue
 			}
 			for _, decl := range f.Decls {
@@ -62,7 +62,7 @@ func ScanStutter(pkgs []*packages.Package) []audit.Finding {
 			Smell:    "Stutter Names",
 			SmellID:  "G2",
 			Severity: audit.SevMedium,
-			Location: pkg.PkgPath,
+			Location: packageLocation(pkg),
 			Message: fmt.Sprintf("Package %q has %d exported name(s) that stutter on the package name.",
 				pkgName, count),
 			Evidence: map[string]any{
@@ -83,18 +83,20 @@ func stutters(pkgName, name string) bool {
 	if pkgName == "" || name == "" {
 		return false
 	}
-	lp := strings.ToLower(pkgName)
-	ln := strings.ToLower(name)
+	lp := []rune(strings.ToLower(pkgName))
+	ln := []rune(strings.ToLower(name))
+	matched := len(lp)
 	// Singular/plural tolerance.
-	if !strings.HasPrefix(ln, lp) {
+	if !runePrefix(ln, lp) {
 		// allow lanes ↔ Lane prefix
-		if strings.HasSuffix(lp, "s") && strings.HasPrefix(ln, lp[:len(lp)-1]) {
-			lp = lp[:len(lp)-1]
+		if len(lp) >= 3 && lp[len(lp)-1] == 's' && runePrefix(ln, lp[:len(lp)-1]) {
+			matched--
 		} else {
 			return false
 		}
 	}
-	if len(name) == len(lp) {
+	nameRunes := []rune(name)
+	if len(nameRunes) == matched {
 		// e.g., type Lanes in package lanes is fine — the constructor.
 		// But this is "the package's main type"; not a stutter.
 		return false
@@ -102,6 +104,18 @@ func stutters(pkgName, name string) bool {
 	// Next rune after the matched prefix should be uppercase letter
 	// (CamelCase boundary), confirming we matched a whole leading
 	// word, not a coincidental prefix match.
-	next := rune(name[len(lp)])
+	next := nameRunes[matched]
 	return unicode.IsUpper(next)
+}
+
+func runePrefix(s, prefix []rune) bool {
+	if len(s) < len(prefix) {
+		return false
+	}
+	for i := range prefix {
+		if s[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
 }

@@ -9,12 +9,23 @@ import "testing"
 // case with non-trivial cross-file ordering surface.
 func TestG7_InitCoupling(t *testing.T) {
 	pkgs := fakeModule(t, map[string]string{
-		"a.go": "package foo\n\nimport \"log\"\n\nfunc init() { log.Println(\"a\") }\n",
-		"b.go": "package foo\n\nimport \"log\"\n\nfunc init() { log.Println(\"b\") }\n",
+		"a.go": "package foo\n\nvar step int\n\nfunc init() { step = 1 }\n",
+		"b.go": "package foo\n\nimport \"log\"\n\nfunc init() { log.Println(step) }\n",
 	})
 	findings := ScanInitCoupling(pkgs)
 	if !containsID(findings, "G7") {
 		t.Fatalf("expected G7, got %v", findingIDs(findings))
+	}
+}
+
+func TestG7_IndependentRegistrations_NoFire(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"registry/registry.go": "package registry\n\nfunc Register(string) {}\n",
+		"a.go":                 "package foo\n\nimport \"example.com/test/registry\"\n\nfunc init() { registry.Register(\"a\") }\n",
+		"b.go":                 "package foo\n\nimport \"example.com/test/registry\"\n\nfunc init() { registry.Register(\"b\") }\n",
+	})
+	if findings := ScanInitCoupling(pkgs); containsID(findings, "G7") {
+		t.Fatalf("did not expect G7 for independent registration inits, got %+v", findings)
 	}
 }
 

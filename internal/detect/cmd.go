@@ -209,7 +209,7 @@ func InitsCmd(f *Flags) *cobra.Command {
 func TunnelCmd(f *Flags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "tunnel [path]",
-		Short: "Find Internal Re-Export Tunnels (packages whose only role is re-exporting from a deeper package).",
+		Short: "Find Internal Re-Export Tunnels (packages dominated by re-exports from a deeper package).",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding {

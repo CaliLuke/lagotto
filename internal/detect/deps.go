@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
-	"path/filepath"
-	"strings"
 
 	"golang.org/x/tools/go/packages"
 
@@ -39,7 +37,7 @@ func ScanDepsBag(pkgs []*packages.Package) []audit.Finding {
 		}
 		for i, file := range pkg.Syntax {
 			fname := syntaxFilename(pkg, i, file)
-			if strings.HasSuffix(fname, "_test.go") {
+			if skipSourceFile(fname, file) {
 				continue
 			}
 			for _, decl := range file.Decls {
@@ -71,7 +69,7 @@ func ScanDepsBag(pkgs []*packages.Package) []audit.Finding {
 						Smell:    "God Dependency Bag",
 						SmellID:  "G4",
 						Severity: sev,
-						Location: fmt.Sprintf("%s:%s", filepath.Base(fname), ts.Name.Name),
+						Location: fmt.Sprintf("%s:%s", sourceLocation(pkg, fname), ts.Name.Name),
 						Message: fmt.Sprintf("Struct %s in %s has %d fields drawing from %d distinct packages.",
 							ts.Name.Name, pkg.PkgPath, fieldCount, len(distinctPkgs)),
 						Evidence: map[string]any{
@@ -120,22 +118,28 @@ func recordFieldPackage(pkg *packages.Package, expr ast.Expr, out map[string]boo
 	if t == nil {
 		return
 	}
-	for {
-		switch x := t.(type) {
-		case *types.Pointer:
-			t = x.Elem()
-			continue
-		case *types.Slice:
-			t = x.Elem()
-			continue
-		case *types.Array:
-			t = x.Elem()
-			continue
-		case *types.Map:
-			t = x.Elem()
-			continue
-		}
-		break
+	recordTypePackages(t, out)
+}
+
+func recordTypePackages(t types.Type, out map[string]bool) {
+	if t == nil {
+		return
+	}
+	t = types.Unalias(t)
+	switch x := t.(type) {
+	case *types.Pointer:
+		recordTypePackages(x.Elem(), out)
+		return
+	case *types.Slice:
+		recordTypePackages(x.Elem(), out)
+		return
+	case *types.Array:
+		recordTypePackages(x.Elem(), out)
+		return
+	case *types.Map:
+		recordTypePackages(x.Key(), out)
+		recordTypePackages(x.Elem(), out)
+		return
 	}
 	named, ok := t.(*types.Named)
 	if !ok {
