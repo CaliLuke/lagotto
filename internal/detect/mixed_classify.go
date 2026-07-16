@@ -16,14 +16,18 @@ const (
 	groupMethods    declGroup = "methods"
 	groupValidation declGroup = "validation"
 	groupUtilities  declGroup = "utilities"
-	groupConstants  declGroup = "constants"
 )
 
 func classifyFile(fset *token.FileSet, file *ast.File) (map[declGroup]int, int) {
 	groups := map[declGroup]int{}
-	pos := fset.Position(file.Pos())
-	endPos := fset.Position(file.End())
-	lineCount := endPos.Line - pos.Line + 1
+	lineCount := 0
+	if tokenFile := fset.File(file.Pos()); tokenFile != nil {
+		lineCount = tokenFile.LineCount()
+	} else {
+		pos := fset.Position(file.Pos())
+		endPos := fset.Position(file.End())
+		lineCount = endPos.Line - pos.Line + 1
+	}
 
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
@@ -36,7 +40,8 @@ func classifyFile(fset *token.FileSet, file *ast.File) (map[declGroup]int, int) 
 					}
 				}
 			case token.CONST, token.VAR:
-				groups[groupConstants]++
+				// Constants and variables commonly accompany the type or
+				// methods they support; they are not an independent concern.
 			}
 		case *ast.FuncDecl:
 			if d.Recv != nil {
@@ -47,9 +52,6 @@ func classifyFile(fset *token.FileSet, file *ast.File) (map[declGroup]int, int) 
 				groups[groupUtilities]++
 			}
 		}
-	}
-	if groups[groupConstants] > 0 && len(groups) == 1 {
-		delete(groups, groupConstants)
 	}
 	return groups, lineCount
 }

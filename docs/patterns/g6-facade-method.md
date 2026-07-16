@@ -25,10 +25,15 @@ generation pay the cost.
 ## What lagotto checks
 
 For each method declaration in the workspace, the detector checks
-whether the body is at most three statements ending in a single
+whether the body spans at most three source lines and ends in a single
 cross-package call, with any prefix statements limited to trivial
 setup (assignment, nil-guard, declaration). If so, it records the
 target package and method, and emits a finding.
+
+Type conversions are not calls and are excluded. Methods that bind receiver
+state, dispatch through an embedded external interface, or wrap a standard
+library boundary are reported at LOW with context-aware guidance because they
+may be load-bearing adapters or test seams.
 
 In-package calls are skipped — the smell is specifically about
 methods that exist only to bridge a package boundary.
@@ -36,6 +41,7 @@ methods that exist only to bridge a package boundary.
 | Severity | Condition                                |
 | -------- | ---------------------------------------- |
 | MEDIUM   | any thin pass-through to another package |
+| LOW      | state/interface/standard-library boundary |
 
 ## Positive example (fires)
 
@@ -76,14 +82,13 @@ The method has substantive logic (validation, decoding, error
 wrapping, in-package follow-up). Even though it crosses a package
 boundary in the middle, it's not a thin pass-through.
 
-Also not flagged:
+Also treated conservatively:
 
 - Methods on types that satisfy an external interface contract
   (e.g., `(c *Conn) Read(p []byte) (int, error)` that calls
   `bufio.Reader.Read`). The interface forces the method to exist;
   removing it would break the contract. lagotto can't tell from the
-  body alone, so reviewers may need to mark these as known
-  false-positives.
+  embedded external interfaces are detected and downgraded.
 - Methods whose body is `return fmt.Sprintf(...)` for an `Error()`
   method on a custom error type. Same reason.
 

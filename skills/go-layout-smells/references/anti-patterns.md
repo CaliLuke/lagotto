@@ -104,7 +104,7 @@ fix is the same as for G1C, plus delete the registries: typed fields
 on the holder where the field types live in subpackages, callers
 take the narrow sub-service.
 
-## Reach-Through Holder (no detector — caller-view test only)
+## Reach-Through Holder (G1E Foreign Holder)
 
 ```go
 // typedbstore/store.go — STRUCTURALLY clean.
@@ -130,21 +130,20 @@ func restoreGraphBundle(ctx context.Context, tdb *typedbstore.TypeDB, projectID 
 }
 ```
 
-The fifth disguise, and the one no detector currently catches. The
+The fifth disguise is consumer-side rather than producer-side. The
 implementation is genuinely decomposed — sub-services live in
 subpackages, the holder has clean typed cross-package fields,
 accessors return the right narrow types, all the structural
-detectors (G1, G1B, G1C, G1D) report zero findings on the holder's
-package. **And yet `*TypeDB` is still the chokepoint** because
+producer detectors (G1, G1B, G1C, G1D) report zero findings on the
+holder's package. G1E scans consumers and catches that `*TypeDB` is still the chokepoint because
 every consumer takes `*TypeDB` and reaches in via the accessors at
 each call site. The accessors that were a fine internal helper (one
 line, return a field) become the implementation of a god-type API
 when called from the outside.
 
-There is no purely structural detector for this shape: the
-implementation is correct; the _consumer_ is wrong. The only test
-that catches it is the caller-view grep (replace `<GodType>` with
-the actual type name, e.g. `TypeDB`):
+The implementation is correct; the _consumer_ is wrong. G1E detects this in
+production signatures. Keep the caller-view grep as an independent verification
+backstop (replace `<GodType>` with the actual type name, e.g. `TypeDB`):
 
 ```bash
 grep -rnE '\*<GodType>\b' --include='*.go' internal/ cmd/ | grep -v _test.go

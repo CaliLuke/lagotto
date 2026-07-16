@@ -85,3 +85,39 @@ func TestG8_RealPackage_NoFire(t *testing.T) {
 		t.Fatalf("did not expect G8 for self-contained package, got %+v", findings)
 	}
 }
+
+func TestG8_TypeConversionsDoNotCountAsReExports(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"inner/inner.go": "package inner\n\ntype ID int\ntype Age int\ntype Count int\n",
+		"outer/outer.go": `package outer
+
+import "example.com/test/inner"
+
+func ID(n int) inner.ID { return inner.ID(n) }
+func Age(n int) inner.Age { return inner.Age(n) }
+func Count(n int) inner.Count { return inner.Count(n) }
+`,
+	})
+	if findings := ScanReExportTunnel(pkgs); containsID(findings, "G8") {
+		t.Fatalf("did not expect G8 for conversion helpers, got %+v", findings)
+	}
+}
+
+func TestG8_MediumSuggestionKeepsLocalDeclarations(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"inner/inner.go": "package inner\n\ntype A struct{}\ntype B struct{}\n",
+		"outer/outer.go": `package outer
+
+import "example.com/test/inner"
+
+type A = inner.A
+type B = inner.B
+type Local struct{}
+func Real() {}
+`,
+	})
+	findings := ScanReExportTunnel(pkgs)
+	if len(findings) != 1 || !strings.Contains(findings[0].Suggestion, "keeping") {
+		t.Fatalf("expected tier-aware medium suggestion, got %+v", findings)
+	}
+}

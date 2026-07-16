@@ -35,12 +35,13 @@ func TestScannersHandleMismatchedPackageFileMetadata(t *testing.T) {
 	pkgs := []*packages.Package{pkg}
 
 	scanners := map[string]func([]*packages.Package) []audit.Finding{
-		"stutter": ScanStutter,
-		"deps":    ScanDepsBag,
-		"mixed":   ScanMixedConcern,
-		"facades": ScanFacades,
-		"inits":   ScanInitCoupling,
-		"tunnel":  ScanReExportTunnel,
+		"stutter":   ScanStutter,
+		"deps":      ScanDepsBag,
+		"mixed":     ScanMixedConcern,
+		"facades":   ScanFacades,
+		"inits":     ScanInitCoupling,
+		"tunnel":    ScanReExportTunnel,
+		"receivers": ScanReceivers,
 	}
 	for name, scan := range scanners {
 		t.Run(name, func(t *testing.T) {
@@ -51,5 +52,21 @@ func TestScannersHandleMismatchedPackageFileMetadata(t *testing.T) {
 			}()
 			_ = scan(pkgs)
 		})
+	}
+}
+
+func TestSyntaxFilenameUsesASTPositionBeforeFileSlices(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "/real/compiled.go", "package foo\n", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg := &packages.Package{
+		GoFiles:         []string{"/wrong/source.go"},
+		CompiledGoFiles: []string{"/also/wrong.go"},
+		Fset:            fset,
+	}
+	if got := syntaxFilename(pkg, 0, file); got != "/real/compiled.go" {
+		t.Fatalf("syntaxFilename = %q, want AST position filename", got)
 	}
 }

@@ -1,6 +1,6 @@
 # G3 — Build-Tag Pair Sprawl
 
-A directory contains three or more `*_stub.go` / `*.go` paired
+A directory contains three or more `*_stub.go` or `*_cgo.go` paired
 files. Each pair conditions one source file with a build tag and
 provides a stub for builds that don't satisfy it. A single pair is a
 normal Go pattern; once the pattern recurs across many files, the
@@ -19,9 +19,10 @@ a sibling subpackage and depending on it through an interface.
 
 ## What lagotto checks
 
-For each directory, the detector counts files whose basename ends in
-`_stub` and whose un-suffixed partner also exists. If the pair count
-is ≥3, the directory is flagged.
+For each directory on disk, the detector counts `_stub` and `_cgo`
+variants whose un-suffixed partner exists and where at least one side has a
+`//go:build` or `// +build` constraint. Reading the directory rather than the
+active build view ensures mutually exclusive pairs are both visible.
 
 | Severity | Condition          |
 | -------- | ------------------ |

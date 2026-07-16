@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- G1E Foreign Holder detects decomposed holder types that remain in production
+  signatures in downstream packages, closing the caller-view gap. (#5)
 - `--fail-on=<severity>` flag: exit 2 when any finding at or above
   the threshold (`critical|high|medium|low`) exists, so CI and
   tooling get a real exit-code signal instead of grepping the text
@@ -16,6 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Filesystem detectors now inspect actual directory entries, including
+  build-constrained files, and correctly exclude generated code, `doc.go`,
+  commands, and platform filename suites. Intentional one-file visibility
+  packages can be recorded via `--exclude`. (#2, #3, #12, #16, #41)
+- Receiver detectors share a method-set cache, unwrap type aliases, count only
+  locally declared pointee methods, apply fixture filters consistently, and
+  produce deterministic, accurate messages and locations. (#13, #15, #21,
+  #28, #37–#40)
+- Mixed-file, facade, init, dependency-bag, re-export, stutter, source filename,
+  and package-loading analysis now match their documented semantics and avoid
+  the reviewed false-positive and performance paths. (#4, #14, #17–#20,
+  #26, #29–#33)
+- The source-install command points at the actual main package. (#25)
 - Runtime errors print once (`lagotto: <error>`) instead of twice
   with a full usage dump; `--tags` values are validated up front so
   raw `go list` plumbing no longer leaks. (#22)

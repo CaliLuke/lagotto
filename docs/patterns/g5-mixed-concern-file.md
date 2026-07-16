@@ -30,17 +30,16 @@ into groups:
 - **validation** — functions whose names start with `Validate`,
   `Verify`, or `Check`
 - **utilities** — other top-level functions
-- **constants** — `const`/`var` blocks
 
 A finding fires when the file has ≥3 distinct groups and ≥100
-lines. Constants are excluded from the group count when they're the
-only group, so a typed-constants file isn't flagged.
+physical file lines. `const` and `var` blocks are supporting declarations,
+not independent concerns, so they never contribute to the group count.
 
 | Severity | Condition     |
 | -------- | ------------- |
 | CRITICAL | ≥600 lines    |
-| HIGH     | ≥300 lines    |
-| MEDIUM   | 100–299 lines |
+| HIGH     | 301–599 lines |
+| MEDIUM   | 100–300 lines |
 
 ## Positive example (fires)
 

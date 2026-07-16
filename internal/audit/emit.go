@@ -37,7 +37,10 @@ func Emit(report *Report, format string) error {
 		if report.Findings[i].SmellID != report.Findings[j].SmellID {
 			return report.Findings[i].SmellID < report.Findings[j].SmellID
 		}
-		return report.Findings[i].Location < report.Findings[j].Location
+		if report.Findings[i].Location != report.Findings[j].Location {
+			return report.Findings[i].Location < report.Findings[j].Location
+		}
+		return report.Findings[i].Message < report.Findings[j].Message
 	})
 
 	switch format {

@@ -92,3 +92,105 @@ func () Compute(n int) int { return inner.Compute(n) }
 		t.Fatalf("did not expect G6 for receiverless method, got %v", findingIDs(findings))
 	}
 }
+
+func TestG6_TypeConversion_NoFire(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"inner/inner.go": "package inner\n\ntype ID int\n",
+		"outer/outer.go": `package outer
+
+import "example.com/test/inner"
+
+type Service struct{}
+func (Service) ID(n int) inner.ID { return inner.ID(n) }
+`,
+	})
+	if findings := ScanFacades(pkgs); containsID(findings, "G6") {
+		t.Fatalf("did not expect G6 for a type conversion, got %+v", findings)
+	}
+}
+
+func TestG6_MultilineIfPrefix_NoFire(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"inner/inner.go": "package inner\n\nfunc Compute(n int) int { return n }\n",
+		"outer/outer.go": `package outer
+
+import "example.com/test/inner"
+
+type Service struct{}
+func (Service) Compute(n int) int {
+	if n < 0 {
+		return 0
+	}
+	return inner.Compute(n)
+}
+`,
+	})
+	if findings := ScanFacades(pkgs); containsID(findings, "G6") {
+		t.Fatalf("did not expect G6 for substantive multiline logic, got %+v", findings)
+	}
+}
+
+func TestG6_StateBindingAndStdlibBoundaryAreLow(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"inner/inner.go": "package inner\n\nfunc Fetch(base, id string) string { return base + id }\n",
+		"outer/outer.go": `package outer
+
+import (
+	"example.com/test/inner"
+	"time"
+)
+
+type Client struct{ base string }
+func (c Client) Fetch(id string) string { return inner.Fetch(c.base, id) }
+
+type Clock struct{}
+func (Clock) Now() time.Time { return time.Now() }
+`,
+	})
+	findings := ScanFacades(pkgs)
+	if len(findings) != 2 {
+		t.Fatalf("expected two contextual facade findings, got %+v", findings)
+	}
+	for _, finding := range findings {
+		if finding.Severity != "LOW" {
+			t.Fatalf("expected contextual facade to be LOW, got %+v", finding)
+		}
+	}
+}
+
+func TestG6_AliasReceiverAndEmbeddedInterface(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"inner/inner.go": `package inner
+
+type Contract interface{ Marker() }
+func Compute(n int) int { return n }
+`,
+		"outer/outer.go": `package outer
+
+import "example.com/test/inner"
+
+type real struct{}
+type Alias = real
+func (*Alias) Compute(n int) int { return inner.Compute(n) }
+
+type Adapter struct { inner.Contract }
+func (*Adapter) Compute(n int) int { return inner.Compute(n) }
+`,
+	})
+	findings := ScanFacades(pkgs)
+	if len(findings) != 2 {
+		t.Fatalf("expected alias receiver and interface adapter findings, got %+v", findings)
+	}
+	seenReal, seenInterface := false, false
+	for _, finding := range findings {
+		if finding.Evidence["receiver"] == "real" {
+			seenReal = true
+		}
+		if finding.Evidence["classification"] == "interface_dispatch" && finding.Severity == "LOW" {
+			seenInterface = true
+		}
+	}
+	if !seenReal || !seenInterface {
+		t.Fatalf("alias or embedded-interface classification missing: %+v", findings)
+	}
+}

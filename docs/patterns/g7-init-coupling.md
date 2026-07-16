@@ -1,9 +1,8 @@
 # G7 — Init Coupling
 
-A package has multiple `init()` functions spread across two or more
-files. Cross-file `init()` ordering in Go is alphabetical filename
-order — a rule that's invisible at the call site and breaks silently
-when files are renamed or split.
+A package has multiple `init()` functions spread across two or more files,
+and one reads package-level state that another writes. The resulting behavior
+depends on cross-file initialization order, which is invisible at call sites.
 
 ## Why this matters
 
@@ -16,10 +15,9 @@ non-obvious failure mode.
 
 ## What lagotto checks
 
-For each loaded package, it counts `init()` functions per file. If
-the package has ≥2 init functions across ≥2 different files, it
-fires. Single-file multi-init is allowed: the source-order rule is
-local and visible.
+For each loaded package, lagotto records package-level variables read and
+written by every `init()`. It fires only when a write in one file feeds a read
+in another. Independent codec/driver registration inits do not fire.
 
 | Severity | Condition                      |
 | -------- | ------------------------------ |
@@ -31,17 +29,17 @@ local and visible.
 ```go
 // auth.go
 package server
-func init() { registerAuthHandlers() }
+var handlersReady bool
+func init() { handlersReady = true }
 ```
 
 ```go
 // metrics.go
 package server
-func init() { registerMetrics() }
+func init() { if handlersReady { registerMetrics() } }
 ```
 
-Two inits across two files. Whether `registerAuthHandlers` runs
-before or after `registerMetrics` is filename-determined.
+The second init reads state written by the first, so their ordering matters.
 
 ## Negative example (does NOT fire)
 

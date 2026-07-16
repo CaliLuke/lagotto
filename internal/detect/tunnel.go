@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/types"
 	"sort"
-	"strings"
 
 	"golang.org/x/tools/go/packages"
 
@@ -42,7 +41,7 @@ func ScanReExportTunnel(pkgs []*packages.Package) []audit.Finding {
 
 		for i, file := range pkg.Syntax {
 			fname := syntaxFilename(pkg, i, file)
-			if strings.HasSuffix(fname, "_test.go") {
+			if skipSourceFile(fname, file) {
 				continue
 			}
 			for _, decl := range file.Decls {
@@ -110,12 +109,16 @@ func ScanReExportTunnel(pkgs []*packages.Package) []audit.Finding {
 		if ratio >= 0.8 {
 			sev = audit.SevHigh
 		}
+		suggestion := "Move the re-exporting callers to " + topTarget + " directly, while keeping this package's genuine local declarations. Once callers no longer depend on the re-exports, delete only the forwarding declarations."
+		if ratio >= 0.8 {
+			suggestion = "Delete this package after updating callers to import " + topTarget + " directly. Re-export tunnels add indirection without identity — every call path passes through a layer that contributes no logic."
+		}
 		findings = append(findings, audit.Finding{
 			Smell:    "Internal Re-Export Tunnel",
 			SmellID:  "G8",
 			Severity: sev,
-			Location: pkg.PkgPath,
-			Message: fmt.Sprintf("Package re-exports %d of %d exported decls (%.0f%%); %d target %s.",
+			Location: packageLocation(pkg),
+			Message: fmt.Sprintf("Package re-exports %d of %d exported declarations (%.0f%%); %d of them re-export from %s.",
 				reExports, total, ratio*100, topCount, topTarget),
 			Evidence: map[string]any{
 				"package":         pkg.PkgPath,
@@ -126,7 +129,7 @@ func ScanReExportTunnel(pkgs []*packages.Package) []audit.Finding {
 				"target_count":    topCount,
 				"all_targets":     targets,
 			},
-			Suggestion: "Delete this package; update callers to import " + topTarget + " directly. Re-export tunnels add indirection without identity — every call path passes through a layer that contributes no logic, making the codebase harder to read and grep.",
+			Suggestion: suggestion,
 		})
 	}
 	return findings

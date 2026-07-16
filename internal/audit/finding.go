@@ -8,7 +8,7 @@ package audit
 //   - Smell: human-readable name ("Receiver Monolith")
 //   - SmellID: short stable ID ("G1") — use this in tooling
 //   - Severity: CRITICAL | HIGH | MEDIUM | LOW
-//   - Location: directory and (for type-level smells) the type name
+//   - Location: stable import path plus file/type/symbol where applicable
 //   - Message: one-line summary suitable for a terminal
 //   - Evidence: structured per-detector data (method counts, file
 //     lists, package paths) for tooling that wants to drill in

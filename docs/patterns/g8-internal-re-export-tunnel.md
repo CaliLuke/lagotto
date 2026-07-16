@@ -1,6 +1,6 @@
 # G8 — Internal Re-Export Tunnel
 
-A package's only role is to re-export names from a deeper package.
+A package's exported surface is dominated by re-exports from a deeper package.
 Its types are aliases (`type Foo = inner.Foo`), its variables are
 re-bindings (`var Default = inner.Default`), and its functions are
 transparent wrappers (`func Hello() string { return inner.Hello() }`).
@@ -29,13 +29,14 @@ exported surface is a tunnel:
 - functions whose body directly calls a same-named function in
   another package and forwards the wrapper's parameters unchanged
 
-If the dominant target package accounts for the majority of the
-tunneled identifiers and the package has no real logic of its own,
-it fires.
+It fires when at least half of exported declarations are re-exports and one
+target accounts for at least half of those re-exports. At 50–79%, remediation
+keeps genuine local declarations; at ≥80%, deleting the tunnel is appropriate.
 
 | Severity | Condition                                             |
 | -------- | ----------------------------------------------------- |
-| MEDIUM   | majority of declarations tunnel to one deeper package |
+| HIGH     | ≥80% of declarations are re-exports                    |
+| MEDIUM   | 50–79% of declarations are re-exports                  |
 
 ## Positive example (fires)
 

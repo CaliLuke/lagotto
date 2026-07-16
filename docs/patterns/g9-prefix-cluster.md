@@ -22,9 +22,9 @@ where the directory listing starts feeling like a forced flat layout.
 ## What lagotto checks
 
 For each directory, it groups files by the substring before the
-first `_`, `-`, or `.` separator. Prefixes shorter than 3 characters
-are ignored (too noisy). A finding fires when any prefix has 3 or
-more files.
+first `_`, `-`, or `.` separator. One-character prefixes are ignored; common
+two-character domain prefixes such as `db_` and `io_` count. Recognized GOOS
+and GOARCH suffix suites are excluded. A finding fires at 3 or more files.
 
 | Severity | Condition               |
 | -------- | ----------------------- |

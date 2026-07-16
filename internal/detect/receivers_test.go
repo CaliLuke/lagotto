@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -254,5 +255,102 @@ type Holder struct {
 	findings := ScanReceivers(pkgs)
 	if containsID(findings, "G1C") {
 		t.Fatalf("did not expect G1C for cross-package holder, got %+v", findings)
+	}
+}
+
+func TestG1C_ForeignPromotedMethodsDoNotCount(t *testing.T) {
+	src := `package foo
+
+import "sync"
+
+type Sub1 struct{ sync.RWMutex }
+type Sub2 struct{ sync.RWMutex }
+type Sub3 struct{ sync.RWMutex }
+type Sub4 struct{ sync.RWMutex }
+type Sub5 struct{ sync.RWMutex }
+
+type Holder struct {
+	A *Sub1
+	B *Sub2
+	C *Sub3
+	D *Sub4
+	E *Sub5
+}
+`
+	if findings := ScanReceivers(fakeModule(t, map[string]string{"a.go": src})); containsID(findings, "G1C") {
+		t.Fatalf("did not expect embedded sync.RWMutex methods to count toward G1C, got %+v", findings)
+	}
+}
+
+func TestG1C_AliasTypedFieldsStillCount(t *testing.T) {
+	src := `package foo
+
+type Sub1 struct{}
+type Sub2 struct{}
+type Sub3 struct{}
+type Sub4 struct{}
+type Sub5 struct{}
+type Alias1 = Sub1
+type Alias2 = Sub2
+type Alias3 = Sub3
+type Alias4 = Sub4
+type Alias5 = Sub5
+type Holder struct { A *Alias1; B *Alias2; C *Alias3; D *Alias4; E *Alias5 }
+`
+	for i := 1; i <= 5; i++ {
+		for j := 1; j <= 5; j++ {
+			src += fmt.Sprintf("func (*Sub%d) M%d() {}\n", i, j)
+		}
+	}
+	if findings := ScanReceivers(fakeModule(t, map[string]string{"a.go": src})); !containsID(findings, "G1C") {
+		t.Fatalf("expected alias-typed fields to count toward G1C, got %v", findingIDs(findings))
+	}
+}
+
+func TestG1C_TestDoubleHolderSkipped(t *testing.T) {
+	src := `package foo
+type Sub1 struct{}
+type Sub2 struct{}
+type Sub3 struct{}
+type Sub4 struct{}
+type Sub5 struct{}
+type MockHolder struct { A *Sub1; B *Sub2; C *Sub3; D *Sub4; E *Sub5 }
+`
+	for i := 1; i <= 5; i++ {
+		for j := 1; j <= 5; j++ {
+			src += fmt.Sprintf("func (*Sub%d) M%d() {}\n", i, j)
+		}
+	}
+	if findings := ScanReceivers(fakeModule(t, map[string]string{"a.go": src})); containsID(findings, "G1C") {
+		t.Fatalf("did not expect a Mock holder to fire G1C, got %+v", findings)
+	}
+}
+
+func TestG1_PromoterTieIsDeterministic(t *testing.T) {
+	src := "package foo\n\ntype alpha struct{}\ntype beta struct{}\ntype Outer struct { *alpha; *beta }\n"
+	methods := []string{"CreateA", "CreateB", "GetA", "GetB", "UpdateA", "UpdateB", "DeleteA", "DeleteB"}
+	for _, receiver := range []string{"alpha", "beta"} {
+		for _, method := range methods {
+			src += "func (*" + receiver + ") " + method + receiver + "() {}\n"
+		}
+	}
+	var message string
+	for i := 0; i < 10; i++ {
+		findings := ScanReceivers(fakeModule(t, map[string]string{"a.go": src}))
+		for _, finding := range findings {
+			if finding.SmellID == "G1" && finding.Evidence["type"] == "Outer" {
+				if message == "" {
+					message = finding.Message
+				} else if finding.Message != message {
+					t.Fatalf("promoter tie changed message: %q vs %q", message, finding.Message)
+				}
+			}
+		}
+	}
+	if message == "" {
+		t.Fatal("expected Outer finding")
+	}
+	if name, count := dominantPromoter(map[string]int{"beta": 8, "alpha": 8}); name != "alpha" || count != 8 {
+		t.Fatalf("dominantPromoter tie = %q, %d; want alpha, 8", name, count)
 	}
 }

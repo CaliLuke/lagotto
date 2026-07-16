@@ -27,4 +27,5 @@ jobs:
         run: |
           set -o pipefail
           go build -o lagotto ./cmd/lagotto
-          ./lagotto audit --format=text --fail-on=low . | tee findings.out
+          ./lagotto audit --format=text --fail-on=low \
+            --exclude=gen,vendor,third_party,design/generated,internal/pkgload,internal/version . | tee findings.out

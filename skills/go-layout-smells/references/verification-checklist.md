@@ -22,7 +22,7 @@ shell snippets below.
    the detectors say.
 
 2. **Effective method set shrinks.** Run lagotto. The original
-   monolith's name should not appear under G1, G1B, G1C, or G1D.
+   monolith's name should not appear under G1, G1B, G1C, G1D, or G1E.
    For a direct verification:
 
    ```go

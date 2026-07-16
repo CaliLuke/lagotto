@@ -75,14 +75,14 @@ not present, fall back to plain prose remediation.
 | G1B | **Decomposition Theatre**     | 3+ type aliases in one package all resolving to a single underlying struct             |
 | G1C | **Aggregate Holder**          | A struct with 5+ same-package sub-service fields whose pointee method count totals ≥25 |
 | G1D | **Hidden Holder**             | Thin holder + ≥3 pointer-keyed registry maps + ≥5 exported `*Holder` accessors         |
-| —   | **Reach-Through Holder**      | _No structural detector._ Caller-view test only — see `references/anti-patterns.md`    |
+| G1E | **Foreign Holder**            | A decomposed holder remains in production signatures in downstream packages            |
 | G2  | **Stutter Names**             | Exported type/function repeats the package name (`lanes.LaneConfig`)                   |
 | G3  | **Build-Tag Pair Sprawl**     | >2 paired files conditioned by build tags (`*_stub.go` / `*_cgo.go`) in one dir        |
-| G4  | **God Dependency Bag**        | A `Deps`/`Container` struct mixes >8 unrelated dependency types                        |
+| G4  | **God Dependency Bag**        | A dependency bag has ≥8 fields drawn from ≥5 distinct external packages                |
 | G5  | **Mixed-Concern File**        | A single file holds 3+ unrelated decl groups (types + validation + utilities)          |
 | G6  | **Facade Method**             | Any method whose body is a thin pass-through (≤3 lines) to a subpackage function       |
 | G7  | **Init Coupling**             | Multiple `func init()` in a package with cross-file ordering dependencies              |
-| G8  | **Internal Re-Export Tunnel** | A package's only role is to re-export from a deeper package (TS pattern, wrong here)   |
+| G8  | **Internal Re-Export Tunnel** | ≥50% of exports tunnel through a dominant deeper package                              |
 | G9  | **Prefix Cluster**            | 3+ files share a name prefix in a flat directory                                       |
 | G10 | **Shadow Suffix**             | File names ending in `_helpers`, `_utils`, `_handlers`, `_actions`, `_responses`       |
 | G11 | **Junk Drawer**               | File named `helpers.go` / `utils.go` / `common.go` / `misc.go` with mixed contents     |
@@ -109,14 +109,12 @@ Once an agent knows lagotto flags Receiver Monolith, the cheapest
 move is to rearrange names until the detector goes quiet. Five
 disguises recur — alias clusters (G1B), aggregate holders (G1C),
 embedding theatre, registry-keyed hidden holders (G1D), and
-reach-through holders (no structural detector — caught only via the
-caller-view grep). All preserve the god type while signalling
+reach-through holders (G1E). All preserve the god type while signalling
 decomposition where there is none.
 
 For full detection criteria, code examples, and fixes, see
-`references/anti-patterns.md`. The reach-through case in particular
-requires the caller-view test there, since structural detectors all
-pass.
+`references/anti-patterns.md`. G1E automates the caller-view signature check;
+the manual grep remains useful as a verification backstop.
 
 ## Spirit, Not Letter
 
@@ -157,7 +155,7 @@ Install once:
 brew install caliluke/tap/lagotto
 
 # Or from source:
-go install github.com/CaliLuke/lagotto@latest
+go install github.com/CaliLuke/lagotto/cmd/lagotto@latest
 ```
 
 Run the full audit:
@@ -227,8 +225,8 @@ not passed through.
 
 ## Severity Guide
 
-- **CRITICAL**: Receiver Monolith with ≥25 methods or ≥7 files; Aggregate Holder with ≥50 pointee methods or ≥7 sub-services; Decomposition Theatre with ≥6 aliases; God Dependency Bag with ≥12 fields
-- **HIGH**: Receiver Monolith ≥15 methods; Aggregate Holder 5–6 sub-services with ≥25 pointee methods; Decomposition Theatre 3–5 aliases; Mixed-Concern File >300 lines; God Dependency Bag 8–11 fields
+- **CRITICAL**: Receiver Monolith with ≥25 methods or ≥7 files; Aggregate Holder with ≥50 pointee methods or ≥7 sub-services; Decomposition Theatre with ≥6 aliases; Foreign Holder in ≥5 sites across ≥3 packages; God Dependency Bag with ≥12 fields; Mixed-Concern File ≥600 lines
+- **HIGH**: Receiver Monolith ≥15 methods; Aggregate Holder 5–6 sub-services with ≥25 pointee methods; Decomposition Theatre 3–5 aliases; any Foreign Holder escape; Mixed-Concern File 301–599 lines; God Dependency Bag 8–11 fields
 - **MEDIUM**: Stutter Names; Build-Tag Pair Sprawl; Mixed-Concern File 100–300 lines; Prefix Cluster of 4+ files; Internal Re-Export Tunnel
 - **LOW**: Premature Package; Shadow Suffix; Init Coupling; Method Stub Sprawl; Junk Drawer <100 lines
 

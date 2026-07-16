@@ -26,9 +26,7 @@ the author wrote before starting.
 
 ## Catalog
 
-| File                                           | Status  | Summary                                                             |
-| ---------------------------------------------- | ------- | ------------------------------------------------------------------- |
-| [g1e-foreign-holder.md](g1e-foreign-holder.md) | planned | Detector for the Reach-Through Holder pattern (consumer-side smell) |
+No planned detector specs are currently queued.
 
 Add new entries here when adding files; remove when the file is
 deleted at merge.
