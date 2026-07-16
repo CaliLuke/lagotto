@@ -1,5 +1,7 @@
 package audit
 
+import "fmt"
+
 // Finding is one entry in a lagotto audit. Every detector emits zero
 // or more findings; the JSON shape is the stable downstream contract.
 //
@@ -30,8 +32,20 @@ type Finding struct {
 // can tell a clean audit from a degraded one; when it is non-empty,
 // detectors may have skipped the affected packages.
 type Report struct {
-	Root       string    `json:"root"`
-	Tags       []string  `json:"tags,omitempty"`
-	LoadErrors []string  `json:"load_errors,omitempty"`
-	Findings   []Finding `json:"findings"`
+	Root               string    `json:"root"`
+	Tags               []string  `json:"tags,omitempty"`
+	LoadErrors         []string  `json:"load_errors,omitempty"`
+	SuppressedFindings int       `json:"suppressed_findings,omitempty"`
+	Findings           []Finding `json:"findings"`
+}
+
+// IncompleteLoadError means the report was emitted, but one or more
+// packages did not load or type-check completely. Callers must treat
+// this as a failed audit rather than a clean result.
+type IncompleteLoadError struct {
+	Count int
+}
+
+func (e *IncompleteLoadError) Error() string {
+	return fmt.Sprintf("audit incomplete: %d package load error(s); see load_errors in the report", e.Count)
 }

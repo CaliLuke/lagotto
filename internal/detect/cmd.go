@@ -3,6 +3,7 @@ package detect
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -16,10 +17,11 @@ import (
 // subcommand. cmd/lagotto/main.go binds these to cobra persistent
 // flags; the detect package reads them at RunE time.
 type Flags struct {
-	Tags    string
-	Format  string
-	Exclude []string
-	FailOn  string
+	Tags     string
+	Format   string
+	Exclude  []string
+	Suppress []string
+	FailOn   string
 }
 
 // argRoot resolves the optional path argument to the directory the
@@ -42,11 +44,25 @@ func argRoot(args []string) string {
 
 // runScan is the shared body of every subcommand: load packages,
 // surface load problems on stderr and in the report envelope, run the
-// detector(s), emit. Load errors do not abort the run — detectors
-// still report on whatever type-checked — but they are never silent:
-// a broken package must be distinguishable from a clean one.
+// detector(s), emit. Detectors still report on whatever type-checked,
+// but an incomplete load returns an error after emission so CI cannot
+// mistake a partial audit for a clean run.
 func runScan(f *Flags, args []string, scan func(root string, pkgs []*packages.Package) []audit.Finding) error {
 	root := argRoot(args)
+	if err := prepareScanRoot(root); err != nil {
+		return err
+	}
+	pkgs, loadErrs, err := pkgload.Load(root, f.Tags, f.Exclude)
+	if err != nil {
+		return err
+	}
+	if len(pkgs) == 0 {
+		fmt.Fprintf(os.Stderr, "lagotto: warning: no Go packages found under %q\n", root)
+	}
+	return emitScanReport(f, root, loadErrs, scan(root, pkgs))
+}
+
+func prepareScanRoot(root string) error {
 	info, err := os.Stat(root)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -57,32 +73,103 @@ func runScan(f *Flags, args []string, scan func(root string, pkgs []*packages.Pa
 	if !info.IsDir() {
 		return fmt.Errorf("%q is not a directory (lagotto takes a directory; subdirectories are always included)", root)
 	}
-	pkgs, loadErrs, err := pkgload.Load(root, f.Tags, f.Exclude)
-	if err != nil {
+	if err := pkgload.CheckToolchain(root); err != nil {
 		return err
 	}
-	if len(pkgs) == 0 {
-		fmt.Fprintf(os.Stderr, "lagotto: warning: no Go packages found under %q\n", root)
-	}
+	return nil
+}
+
+func emitScanReport(f *Flags, root string, loadErrs []string, rawFindings []audit.Finding) error {
 	for _, le := range loadErrs {
 		fmt.Fprintln(os.Stderr, "lagotto: load error:", le)
 	}
 	if len(loadErrs) > 0 {
 		fmt.Fprintf(os.Stderr, "lagotto: warning: %d package load error(s); findings may be incomplete\n", len(loadErrs))
 	}
+	findings, suppressed, err := audit.ApplySuppressions(rawFindings, f.Suppress)
+	if err != nil {
+		return err
+	}
 	report := &audit.Report{
-		Root:       root,
-		Tags:       audit.ResolvedTags(f.Tags),
-		LoadErrors: loadErrs,
-		Findings:   scan(root, pkgs),
+		Root:               root,
+		Tags:               audit.ResolvedTags(f.Tags),
+		LoadErrors:         loadErrs,
+		SuppressedFindings: suppressed,
+		Findings:           findings,
 	}
 	if err := audit.Emit(report, f.Format); err != nil {
 		return err
 	}
-	if f.FailOn != "" {
-		threshold, ok := audit.ParseSeverity(f.FailOn)
+	return reportOutcome(report, f.FailOn)
+}
+
+const auditPackageBatchSize = 24
+
+// runAuditScan avoids retaining module-wide syntax and TypesInfo maps.
+// Receiver detectors run from a lightweight type-only load, then the
+// syntax-dependent detectors process bounded package batches.
+func runAuditScan(f *Flags, args []string) error {
+	root := argRoot(args)
+	if err := prepareScanRoot(root); err != nil {
+		return err
+	}
+	typedPkgs, loadErrs, err := pkgload.LoadTypes(root, f.Tags, f.Exclude)
+	if err != nil {
+		return err
+	}
+	if len(typedPkgs) == 0 {
+		fmt.Fprintf(os.Stderr, "lagotto: warning: no Go packages found under %q\n", root)
+	}
+	findings := ScanReceivers(typedPkgs)
+	paths := make([]string, 0, len(typedPkgs))
+	for _, pkg := range typedPkgs {
+		paths = append(paths, pkg.PkgPath)
+	}
+	runtime.GC()
+
+	for start := 0; start < len(paths); start += auditPackageBatchSize {
+		end := min(start+auditPackageBatchSize, len(paths))
+		pkgs, batchErrs, err := pkgload.LoadPatterns(root, f.Tags, f.Exclude, paths[start:end])
+		if err != nil {
+			return err
+		}
+		loadErrs = appendUnique(loadErrs, batchErrs...)
+		findings = append(findings, ScanStutter(pkgs)...)
+		findings = append(findings, ScanFacades(pkgs)...)
+		findings = append(findings, ScanDepsBag(pkgs)...)
+		findings = append(findings, ScanMixedConcern(pkgs)...)
+		findings = append(findings, ScanInitCoupling(pkgs)...)
+		findings = append(findings, ScanReExportTunnel(pkgs)...)
+	}
+	findings = append(findings, ScanFS(root, nil, f.Exclude)...)
+	return emitScanReport(f, root, loadErrs, findings)
+}
+
+func appendUnique(existing []string, values ...string) []string {
+	seen := make(map[string]bool, len(existing)+len(values))
+	for _, value := range existing {
+		seen[value] = true
+	}
+	for _, value := range values {
+		if !seen[value] {
+			existing = append(existing, value)
+			seen[value] = true
+		}
+	}
+	return existing
+}
+
+// reportOutcome applies exit-code precedence after a report has been
+// emitted. Incomplete loading is a run failure (exit 1) even when the
+// partial findings also meet --fail-on (exit 2).
+func reportOutcome(report *audit.Report, failOn string) error {
+	if len(report.LoadErrors) > 0 {
+		return &audit.IncompleteLoadError{Count: len(report.LoadErrors)}
+	}
+	if failOn != "" {
+		threshold, ok := audit.ParseSeverity(failOn)
 		if !ok {
-			return fmt.Errorf("unknown --fail-on severity %q (critical|high|medium|low)", f.FailOn)
+			return fmt.Errorf("unknown --fail-on severity %q (critical|high|medium|low)", failOn)
 		}
 		count := 0
 		for _, fd := range report.Findings {
@@ -105,18 +192,7 @@ func AuditCmd(f *Flags) *cobra.Command {
 		Short: "Run all smell detectors and emit findings.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			return runScan(f, args, func(root string, pkgs []*packages.Package) []audit.Finding {
-				var findings []audit.Finding
-				findings = append(findings, ScanReceivers(pkgs)...)
-				findings = append(findings, ScanStutter(pkgs)...)
-				findings = append(findings, ScanFacades(pkgs)...)
-				findings = append(findings, ScanDepsBag(pkgs)...)
-				findings = append(findings, ScanMixedConcern(pkgs)...)
-				findings = append(findings, ScanInitCoupling(pkgs)...)
-				findings = append(findings, ScanReExportTunnel(pkgs)...)
-				findings = append(findings, ScanFS(root, pkgs, f.Exclude)...)
-				return findings
-			})
+			return runAuditScan(f, args)
 		},
 	}
 }

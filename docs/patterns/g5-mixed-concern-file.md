@@ -1,7 +1,7 @@
 # G5 — Mixed-Concern File
 
 A single `.go` file holds three or more unrelated declaration groups
-(types, methods, validation, utilities) over 100+ lines. The file is
+(types, methods, validation, utilities) over 200+ lines. The file may be
 a junk drawer disguised as a module: a reader has to scan past
 several unrelated concerns to find the one they're looking for.
 
@@ -10,15 +10,14 @@ several unrelated concerns to find the one they're looking for.
 Go encourages many small files in one package, since the package is
 the unit of encapsulation. Within a package, files are organizational
 hints: this file holds the types, that file holds the validation,
-this other file holds the route handlers. When one file mixes types
+this other file holds the route handlers. When one file mixes types,
+methods, validation, and utilities, those hints break and readers
+revert to grep.
 
-- methods + validation + utilities, those hints break and readers
-  revert to grep.
-
-The 100-line floor exists because tiny mixed files (a 30-line file
-with one type, one method, and one helper) are not a real navigation
-problem. The smell only matters at sizes where reading top-to-bottom
-costs real time.
+The 200-line floor exists because modest mixed files—including cohesive
+commands that keep a type, its methods, and small helpers together—are
+not a real navigation problem. The smell only matters at sizes where
+reading top-to-bottom costs real time.
 
 ## What lagotto checks
 
@@ -31,15 +30,14 @@ into groups:
   `Verify`, or `Check`
 - **utilities** — other top-level functions
 
-A finding fires when the file has ≥3 distinct groups and ≥100
+A finding fires when the file has ≥3 distinct groups and ≥200
 physical file lines. `const` and `var` blocks are supporting declarations,
 not independent concerns, so they never contribute to the group count.
 
 | Severity | Condition     |
 | -------- | ------------- |
-| CRITICAL | ≥600 lines    |
-| HIGH     | 301–599 lines |
-| MEDIUM   | 100–300 lines |
+| HIGH     | ≥600 lines    |
+| MEDIUM   | 200–599 lines |
 
 ## Positive example (fires)
 
@@ -83,8 +81,9 @@ in it.
 
 ## How to fix it
 
-Split the file by group. The split usually maps directly to the
-groups the detector named:
+Review semantic cohesion before splitting. Declaration categories are
+navigation evidence, not proof that the code has separate responsibilities.
+When the groups do change independently, a split may map to:
 
 - `types.go` — type declarations
 - `methods.go` (or `<type>.go` per type) — methods
@@ -96,6 +95,9 @@ groups the detector named:
 If the file mixes work for two unrelated types, that's a signal the
 two types might want to live in different files (or different
 packages).
+
+If the file is intentionally cohesive, keep it and suppress the exact
+location, for example `--suppress=G5@billing/invoice.go`.
 
 ## Related
 

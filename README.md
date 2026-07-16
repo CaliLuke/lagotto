@@ -30,6 +30,8 @@ brew install caliluke/tap/lagotto
 go install github.com/CaliLuke/lagotto/cmd/lagotto@latest
 ```
 
+Building from source requires Go 1.26 or later.
+
 ### Pre-built binary
 
 Grab a release from <https://github.com/CaliLuke/lagotto/releases>.
@@ -48,18 +50,29 @@ lagotto audit --format=text ./internal
 
 # Gate CI on findings: exit 2 if anything MEDIUM or worse is found
 lagotto audit --fail-on=medium ./internal
+
+# Suppress one accepted finding by its stable smell ID and location
+lagotto audit --suppress=G5@cmd/server/cli_perf.go .
 ```
 
 JSON output is the default contract for tooling. Each finding has
 `smell`, `smell_id`, `severity`, `location`, `message`, `evidence`, and
 `suggestion`. Findings are pre-sorted CRITICAL → LOW. When packages
 fail to load or typecheck, the report carries a `load_errors` array
-(and the errors are printed to stderr) so a degraded audit is
-distinguishable from a clean one.
+(and the errors are printed to stderr), and lagotto exits 1 after
+emitting the partial report. A degraded audit therefore cannot pass
+as a clean CI result. Lagotto also exits 1 before loading packages when
+the target module's `go` directive is newer than the toolchain embedded
+in the Lagotto binary.
 
 Exit codes: `0` clean run, `1` run failed, `2` findings at or above
-the `--fail-on` threshold (`critical|high|medium|low`; without the
-flag lagotto always exits 0 when the audit runs).
+the `--fail-on` threshold (`critical|high|medium|low`). Incomplete
+package loading takes precedence over `--fail-on` and exits 1.
+
+`--suppress` is repeatable. Use `SMELL_ID` to suppress a detector
+globally or `SMELL_ID@LOCATION` to suppress only findings whose stable
+location starts with that value. JSON reports include
+`suppressed_findings` when any matches were removed.
 
 ## Smell catalog
 
@@ -208,19 +221,24 @@ Before accepting "the receiver is decomposed", confirm:
 runs each detector against the loaded type graph. Detection is based on
 the type checker's view, not source-AST string matching, so it sees
 through type aliases, generics, embedding, and build tags accurately.
+The default audit performs receiver analysis from declaration-only type
+metadata, then loads statement-level type information in bounded package
+batches to keep peak memory proportional to a slice of the module.
 
 ## Severity guide
 
-- **CRITICAL** — Receiver Monolith ≥25 methods or ≥7 files; Aggregate
+- **CRITICAL** — Receiver Monolith ≥25 methods or ≥7 files with at least
+  four concrete concern groups (the fallback `other` bucket does not count);
+  Aggregate
   Holder with ≥50 pointee methods or ≥7 sub-services; Decomposition
   Theatre ≥6 aliases; Foreign Holder in ≥5 signatures across ≥3 packages;
-  God Dependency Bag ≥12 fields; Mixed-Concern File ≥600 lines.
+  God Dependency Bag ≥12 fields.
 - **HIGH** — Receiver Monolith ≥15 methods; Aggregate Holder 5–6
   sub-services with ≥25 pointee methods; Decomposition Theatre 3–5
-  aliases; any Foreign Holder escape; Mixed-Concern File 301–599 lines;
+  aliases; any Foreign Holder escape; Mixed-Concern File ≥600 lines;
   God Dependency Bag 8–11 fields.
 - **MEDIUM** — Stutter Names; Build-Tag Pair Sprawl; Mixed-Concern File
-  100–300 lines; Prefix Cluster of 4+ files; Internal Re-Export Tunnel.
+  200–599 lines; Prefix Cluster of 4+ files; Internal Re-Export Tunnel.
 - **LOW** — Premature Package; Shadow Suffix; Init Coupling; Junk
   Drawer <100 lines.
 

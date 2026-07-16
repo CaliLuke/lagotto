@@ -35,11 +35,14 @@ For every named struct in the workspace:
 
 A finding fires when the type owns ≥15 methods spanning ≥3 concerns.
 
-| Severity | Condition               |
-| -------- | ----------------------- |
-| CRITICAL | ≥25 methods or ≥7 files |
-| HIGH     | ≥15 methods, <25        |
-| MEDIUM   | barely above threshold  |
+| Severity | Condition |
+| -------- | --------- |
+| CRITICAL | ≥25 methods or ≥7 files, and ≥4 concrete concern groups |
+| HIGH     | ≥15 methods across ≥3 groups, but below the critical evidence bar |
+
+The fallback `other` bucket helps the detector decide that a receiver is
+not uniform, but it does not count as a concrete concern for CRITICAL
+severity. Raw size and undifferentiated names alone are not enough.
 
 ## Positive example (fires)
 
@@ -83,8 +86,11 @@ buckets, so the ≥3-concerns gate filters this out.
 
 ## How to fix it
 
-The principle: each natural concern becomes its own subpackage with
-its own narrow type.
+First determine whether the reported groups really change independently.
+If the receiver is cohesive within the repository's layering rules,
+suppress the specific finding. Otherwise, each natural concern can become
+its own narrow type; a new subpackage is useful only when the repository's
+package boundaries support it.
 
 1. **Identify concerns**: read the methods and group them. For a
    typical god-DB: `connection`, `nodes`, `edges`, `search`,

@@ -44,6 +44,9 @@ Exit codes: 0 clean run, 1 run failed, 2 findings met --fail-on.`,
 			if err := pkgload.ValidateTags(flags.Tags); err != nil {
 				return err
 			}
+			if err := audit.ValidateSuppressions(flags.Suppress); err != nil {
+				return err
+			}
 			if flags.FailOn != "" {
 				if _, ok := audit.ParseSeverity(flags.FailOn); !ok {
 					return fmt.Errorf("unknown --fail-on severity %q (critical|high|medium|low)", flags.FailOn)
@@ -56,6 +59,7 @@ Exit codes: 0 clean run, 1 run failed, 2 findings met --fail-on.`,
 	rootCmd.PersistentFlags().StringVar(&flags.Tags, "tags", "", "comma-separated build tags (e.g., cgo,typedb)")
 	rootCmd.PersistentFlags().StringVar(&flags.Format, "format", "json", "output format: json | text")
 	rootCmd.PersistentFlags().StringSliceVar(&flags.Exclude, "exclude", []string{"gen", "vendor", "third_party", "design/generated"}, "path segments to exclude (matches whole segments: \"gen\" skips a/gen/b but not a/agent/b)")
+	rootCmd.PersistentFlags().StringSliceVar(&flags.Suppress, "suppress", nil, "suppress findings by SMELL_ID or SMELL_ID@LOCATION prefix (repeatable)")
 	rootCmd.PersistentFlags().StringVar(&flags.FailOn, "fail-on", "", "exit 2 if any finding is at or above this severity: critical | high | medium | low")
 
 	rootCmd.AddCommand(

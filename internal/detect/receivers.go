@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/types"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -363,7 +364,11 @@ func scanMethodSets(pkg *packages.Package, caches ...*typeutil.MethodSetCache) [
 		// the original heuristic missed types that had been
 		// "decomposed" by reshuffling files within one package.
 		sev := audit.SevHigh
-		if len(methodNames) >= 25 || len(files) >= 7 {
+		concreteConcerns := len(concerns)
+		if slices.Contains(concerns, "other") {
+			concreteConcerns--
+		}
+		if (len(methodNames) >= 25 || len(files) >= 7) && concreteConcerns >= 4 {
 			sev = audit.SevCritical
 		}
 
@@ -394,7 +399,7 @@ func scanMethodSets(pkg *packages.Package, caches ...*typeutil.MethodSetCache) [
 			ev["promoted_from"] = promotedFrom
 		}
 
-		suggestion := "Decompose " + name + " into per-concern receiver types in subpackages, one per concern group. Each subpackage exports its own struct holding only the state it needs. Delete " + name + " (or reduce it to a tiny construction helper). Update every caller in the same change. Do not retain accessors, facade methods, embedding shortcuts, or type aliases on the original type."
+		suggestion := "Review whether " + name + " combines responsibilities that change independently. If it does, extract narrower receiver types at boundaries compatible with the repository's layering rules; if its method set is intentionally cohesive, suppress this specific finding."
 		if theatreNote != "" {
 			suggestion += " IMPORTANT: this type's method set is dominated by methods promoted from an embedded same-package type — file moves and renamed receivers will not fix this; the embedding itself is the smell."
 		}

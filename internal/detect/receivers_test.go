@@ -56,6 +56,28 @@ type Conn struct{}
 	}
 }
 
+func TestG1_RawSizeAndOtherBucketDoNotBecomeCritical(t *testing.T) {
+	src := "package foo\n\ntype Service struct{}\n"
+	for i := 0; i < 10; i++ {
+		src += fmt.Sprintf("func (*Service) Get%d() {}\n", i)
+		src += fmt.Sprintf("func (*Service) Delete%d() {}\n", i)
+		src += fmt.Sprintf("func (*Service) Custom%d() {}\n", i)
+	}
+	findings := ScanReceivers(fakeModule(t, map[string]string{"service.go": src}))
+	found := false
+	for _, finding := range findings {
+		if finding.SmellID == "G1" {
+			found = true
+			if finding.Severity != audit.SevHigh {
+				t.Fatalf("expected raw size with only two concrete concerns to remain HIGH, got %+v", finding)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected a G1 finding at HIGH severity")
+	}
+}
+
 // TestG1_PromotedViaEmbedding ensures methods promoted onto an outer
 // struct via a same-package embedded pointer count toward the outer
 // type's effective method set. This is the "embedding theatre"

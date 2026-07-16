@@ -11,7 +11,7 @@ import (
 )
 
 // ScanMixedConcern flags files that mix three or more declaration
-// groups (types, methods, validation, utilities) over the 100-line
+// groups (types, methods, validation, utilities) over the 200-line
 // floor. The smell predicts the file is a junk drawer disguised as
 // a module.
 func ScanMixedConcern(pkgs []*packages.Package) []audit.Finding {
@@ -29,15 +29,12 @@ func ScanMixedConcern(pkgs []*packages.Package) []audit.Finding {
 			if len(groups) < 3 {
 				continue
 			}
-			if lineCount < 100 {
+			if lineCount < 200 {
 				continue
 			}
 			sev := audit.SevMedium
-			if lineCount > 300 {
-				sev = audit.SevHigh
-			}
 			if lineCount >= 600 {
-				sev = audit.SevCritical
+				sev = audit.SevHigh
 			}
 			findings = append(findings, audit.Finding{
 				Smell:    "Mixed-Concern File",
@@ -52,7 +49,7 @@ func ScanMixedConcern(pkgs []*packages.Package) []audit.Finding {
 					"groups":     groupNames(groups),
 					"line_count": lineCount,
 				},
-				Suggestion: "Split the file by concern: types in one file, methods in another, validation/utilities in their own files. Avoid mixing pure types with arbitrary helpers in the same file.",
+				Suggestion: "Review whether these declaration groups serve distinct responsibilities. If they do, split along those responsibilities while preserving the repository's package boundaries; if the file is semantically cohesive, suppress this specific finding.",
 			})
 		}
 	}

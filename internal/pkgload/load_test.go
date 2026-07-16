@@ -1,6 +1,8 @@
 package pkgload
 
 import (
+	"go/ast"
+	"go/types"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,6 +125,39 @@ func TestLoadDoesNotParseDependencySyntax(t *testing.T) {
 	}
 	if len(fmtPkg.Syntax) != 0 {
 		t.Fatalf("dependency syntax was loaded unexpectedly: %d files", len(fmtPkg.Syntax))
+	}
+}
+
+func TestLoadTypesKeepsUnexportedDeclarationsWithoutBodies(t *testing.T) {
+	root := writeModule(t, map[string]string{
+		"go.mod": "module example.com/types\ngo 1.26\n",
+		"types.go": `package types
+
+type private struct{}
+func (*private) hidden() { panic("body must not be needed") }
+`,
+	})
+	pkgs, loadErrs, err := LoadTypes(root, "", nil)
+	if err != nil || len(loadErrs) != 0 {
+		t.Fatalf("LoadTypes: err=%v loadErrs=%v", err, loadErrs)
+	}
+	if len(pkgs) != 1 {
+		t.Fatalf("expected one package, got %d", len(pkgs))
+	}
+	obj := pkgs[0].Types.Scope().Lookup("private")
+	if obj == nil {
+		t.Fatal("unexported type missing from lightweight load")
+	}
+	named, ok := obj.Type().(*types.Named)
+	if !ok || named.NumMethods() != 1 || named.Method(0).Name() != "hidden" {
+		t.Fatalf("unexported method missing from lightweight load: %v", obj.Type())
+	}
+	for _, file := range pkgs[0].Syntax {
+		for _, decl := range file.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok && (fn.Body == nil || len(fn.Body.List) != 1) {
+				t.Fatalf("function body was not reduced to a terminating stub for %s", fn.Name.Name)
+			}
+		}
 	}
 }
 

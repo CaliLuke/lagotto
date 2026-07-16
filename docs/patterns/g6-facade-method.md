@@ -35,6 +35,11 @@ state, dispatch through an embedded external interface, or wrap a standard
 library boundary are reported at LOW with context-aware guidance because they
 may be load-bearing adapters or test seams.
 
+Canonical interface-contract signatures `Error() string`, `String() string`,
+and `Unwrap() error` / `Unwrap() []error` are excluded. Their method names and
+shapes are dictated by standard Go contracts, so a thin implementation is not
+evidence of a redundant facade.
+
 In-package calls are skipped — the smell is specifically about
 methods that exist only to bridge a package boundary.
 
@@ -89,8 +94,9 @@ Also treated conservatively:
   `bufio.Reader.Read`). The interface forces the method to exist;
   removing it would break the contract. lagotto can't tell from the
   embedded external interfaces are detected and downgraded.
-- Methods whose body is `return fmt.Sprintf(...)` for an `Error()`
-  method on a custom error type. Same reason.
+- Methods whose body is `return fmt.Sprintf(...)` for an `Error()` or
+  `String()` method, and canonical `Unwrap()` methods. Their exact
+  signatures are excluded from this detector.
 
 ## How to fix it
 
