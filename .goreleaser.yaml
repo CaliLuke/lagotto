@@ -77,7 +77,7 @@ release:
 
     Audit Go file/package layout for structural problems the language's
     rules produce — Receiver Monolith, Decomposition Theatre, Aggregate
-    Holder, and 11 other smells.
+    Holder, Foreign Holder, and more.
 
     Install via Homebrew:
     ```bash
