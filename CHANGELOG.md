@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-16
+
+### Changed
+
+- Release artifacts are now built with Go 1.26 instead of the unsupported
+  Go 1.23 toolchain. CI continues to verify the declared Go 1.23 compatibility
+  floor alongside Go 1.26.
+
 ## [0.2.0] - 2026-07-16
 
 ### Added
@@ -133,7 +141,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Goreleaser configuration with multi-arch darwin/linux builds and
   Homebrew tap publish.
 
-[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/CaliLuke/lagotto/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/CaliLuke/lagotto/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/CaliLuke/lagotto/releases/tag/v0.1.2
 [0.1.1]: https://github.com/CaliLuke/lagotto/releases/tag/v0.1.1
