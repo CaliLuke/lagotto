@@ -13,7 +13,6 @@ jobs:
       fail-fast: false
       matrix:
         go-version:
-          - "1.23.x"
           - "1.26.x"
     steps:
       - uses: actions/checkout@v6
@@ -24,7 +23,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.1.6
+          version: v2.12.2
           args: --timeout=3m
       - name: go vet
         run: go vet ./...

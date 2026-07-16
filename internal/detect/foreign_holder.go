@@ -2,8 +2,8 @@ package detect
 
 import (
 	"fmt"
-	"go/ast"
 	"go/types"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -36,41 +36,41 @@ func scanForeignHolders(pkgs []*packages.Package) []audit.Finding {
 	}
 	uses := map[string]*foreignHolderUse{}
 	for _, pkg := range pkgs {
-		if pkg.PkgPath == "" || pkg.TypesInfo == nil || isTestPackage(pkg.PkgPath) {
+		if pkg.PkgPath == "" || pkg.Types == nil || isTestPackage(pkg.PkgPath) {
 			continue
 		}
-		for i, file := range pkg.Syntax {
-			filename := syntaxFilename(pkg, i, file)
-			if skipSourceFile(filename, file) {
-				continue
-			}
-			for _, decl := range file.Decls {
-				switch d := decl.(type) {
-				case *ast.FuncDecl:
-					recordForeignHolderFunctionUses(uses, candidates, pkg, filename, d)
-				case *ast.GenDecl:
-					for _, spec := range d.Specs {
-						ts, ok := spec.(*ast.TypeSpec)
-						if !ok || isTestDouble(ts.Name.Name) {
+		scope := pkg.Types.Scope()
+		for _, name := range scope.Names() {
+			obj := scope.Lookup(name)
+			switch object := obj.(type) {
+			case *types.Func:
+				recordForeignHolderSignatureUses(uses, candidates, pkg, object, object.Name())
+			case *types.TypeName:
+				if isTestDouble(object.Name()) {
+					continue
+				}
+				named, ok := types.Unalias(object.Type()).(*types.Named)
+				if !ok {
+					continue
+				}
+				if st, ok := named.Underlying().(*types.Struct); ok {
+					for i := 0; i < st.NumFields(); i++ {
+						field := st.Field(i)
+						if !field.Exported() {
 							continue
 						}
-						st, ok := ts.Type.(*ast.StructType)
-						if !ok || st.Fields == nil {
-							continue
-						}
-						for _, field := range st.Fields.List {
-							if len(field.Names) == 0 || !field.Names[0].IsExported() {
+						for _, candidate := range holderCandidatesInType(field.Type(), candidates) {
+							if candidate.pkgPath == pkg.PkgPath {
 								continue
 							}
-							for _, candidate := range holderCandidatesInType(pkg.TypesInfo.TypeOf(field.Type), candidates) {
-								if candidate.pkgPath == pkg.PkgPath {
-									continue
-								}
-								site := fmt.Sprintf("%s:%s.%s", sourceLocation(pkg, filename), ts.Name.Name, field.Names[0].Name)
-								addForeignHolderUse(uses, candidate, pkg.PkgPath, packageLocation(pkg), site)
-							}
+							site := fmt.Sprintf("%s:%s.%s", objectSourceLocation(pkg, field), object.Name(), field.Name())
+							addForeignHolderUse(uses, candidate, pkg.PkgPath, packageLocation(pkg), site)
 						}
 					}
+				}
+				for i := 0; i < named.NumMethods(); i++ {
+					method := named.Method(i)
+					recordForeignHolderSignatureUses(uses, candidates, pkg, method, object.Name()+"."+method.Name())
 				}
 			}
 		}
@@ -175,34 +175,36 @@ func collectHolderCandidates(pkgs []*packages.Package) map[string]holderCandidat
 	return candidates
 }
 
-func recordForeignHolderFunctionUses(uses map[string]*foreignHolderUse, candidates map[string]holderCandidate, pkg *packages.Package, filename string, fn *ast.FuncDecl) {
-	symbol := fn.Name.Name
-	if fn.Recv != nil && len(fn.Recv.List) > 0 {
-		symbol = receiverTypeName(pkg.TypesInfo, fn.Recv.List[0]) + "." + symbol
-	}
-	for _, fieldList := range []*ast.FieldList{fn.Type.Params} {
-		if fieldList == nil {
-			continue
-		}
-		for _, field := range fieldList.List {
-			for _, candidate := range holderCandidatesInType(pkg.TypesInfo.TypeOf(field.Type), candidates) {
-				if candidate.pkgPath != pkg.PkgPath {
-					addForeignHolderUse(uses, candidate, pkg.PkgPath, packageLocation(pkg), sourceLocation(pkg, filename)+":"+symbol)
-				}
-			}
-		}
-	}
-	if fn.Type.Results == nil {
+func recordForeignHolderSignatureUses(uses map[string]*foreignHolderUse, candidates map[string]holderCandidate, pkg *packages.Package, fn *types.Func, symbol string) {
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok {
 		return
 	}
-	for _, field := range fn.Type.Results.List {
-		for _, candidate := range holderCandidatesInType(pkg.TypesInfo.TypeOf(field.Type), candidates) {
-			if candidate.pkgPath == pkg.PkgPath || isHolderConstructor(fn.Name.Name, candidate.typeName) {
-				continue
+	site := objectSourceLocation(pkg, fn) + ":" + symbol
+	for i := 0; i < sig.Params().Len(); i++ {
+		for _, candidate := range holderCandidatesInType(sig.Params().At(i).Type(), candidates) {
+			if candidate.pkgPath != pkg.PkgPath {
+				addForeignHolderUse(uses, candidate, pkg.PkgPath, packageLocation(pkg), site)
 			}
-			addForeignHolderUse(uses, candidate, pkg.PkgPath, packageLocation(pkg), sourceLocation(pkg, filename)+":"+symbol)
 		}
 	}
+	for i := 0; i < sig.Results().Len(); i++ {
+		for _, candidate := range holderCandidatesInType(sig.Results().At(i).Type(), candidates) {
+			if candidate.pkgPath == pkg.PkgPath || isHolderConstructor(fn.Name(), candidate.typeName) {
+				continue
+			}
+			addForeignHolderUse(uses, candidate, pkg.PkgPath, packageLocation(pkg), site)
+		}
+	}
+}
+
+func objectSourceLocation(pkg *packages.Package, object types.Object) string {
+	if pkg.Fset != nil {
+		if pos := pkg.Fset.Position(object.Pos()); pos.IsValid() && pos.Filename != "" {
+			return sourceLocation(pkg, filepath.Base(pos.Filename))
+		}
+	}
+	return packageLocation(pkg)
 }
 
 func holderCandidatesInType(t types.Type, candidates map[string]holderCandidate) []holderCandidate {

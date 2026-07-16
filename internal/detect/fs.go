@@ -265,7 +265,7 @@ func prematurePackageFindings(root, dir, location string, contents packageDirCon
 			"dir":  location,
 			"file": contents.files[0],
 		},
-		Suggestion: "If this package enforces an intentional visibility boundary, keep it and suppress the directory with --exclude. Otherwise add cohesive siblings as the concern grows or inline the file into the parent package.",
+		Suggestion: "If this package enforces an intentional visibility boundary, keep it and suppress this finding with --suppress G12@" + location + ". Otherwise add cohesive siblings as the concern grows or inline the file into the parent package.",
 	}}
 }
 

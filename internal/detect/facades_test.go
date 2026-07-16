@@ -194,3 +194,40 @@ func (*Adapter) Compute(n int) int { return inner.Compute(n) }
 		t.Fatalf("alias or embedded-interface classification missing: %+v", findings)
 	}
 }
+
+func TestG6_StandardInterfaceContractsDoNotFire(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"outer/outer.go": `package outer
+
+import (
+	"errors"
+	"fmt"
+)
+
+type Problem struct{ cause error }
+
+func (p Problem) Error() string { return fmt.Sprintf("problem: %v", p.cause) }
+func (p Problem) String() string { return fmt.Sprintf("problem: %v", p.cause) }
+func (p Problem) Unwrap() error { return errors.Unwrap(p.cause) }
+`,
+	})
+	if findings := ScanFacades(pkgs); containsID(findings, "G6") {
+		t.Fatalf("did not expect interface-contract methods to be facades, got %+v", findings)
+	}
+}
+
+func TestG6_ContractNameWithDifferentSignatureStillFires(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"inner/inner.go": "package inner\n\nfunc Render(prefix string) string { return prefix }\n",
+		"outer/outer.go": `package outer
+
+import "example.com/test/inner"
+
+type Value struct{}
+func (Value) String(prefix string) string { return inner.Render(prefix) }
+`,
+	})
+	if findings := ScanFacades(pkgs); !containsID(findings, "G6") {
+		t.Fatalf("expected non-contract String signature to remain detectable, got %+v", findings)
+	}
+}

@@ -44,6 +44,9 @@ func ScanFacades(pkgs []*packages.Package) []audit.Finding {
 				if !ok || fn.Recv == nil || len(fn.Recv.List) == 0 || fn.Body == nil {
 					continue
 				}
+				if isStandardContractMethod(pkg, fn) {
+					continue
+				}
 				if isFacade(pkg, fn) {
 					recv := receiverTypeName(pkg.TypesInfo, fn.Recv.List[0])
 					target := delegateTarget(pkg, fn)
@@ -87,6 +90,38 @@ func ScanFacades(pkgs []*packages.Package) []audit.Finding {
 		}
 	}
 	return findings
+}
+
+// isStandardContractMethod excludes canonical methods whose names and
+// signatures are dictated by ubiquitous Go interfaces. A thin body is
+// expected for these contracts and is not evidence of a redundant API.
+func isStandardContractMethod(pkg *packages.Package, fn *ast.FuncDecl) bool {
+	if pkg.TypesInfo == nil {
+		return false
+	}
+	obj, ok := pkg.TypesInfo.Defs[fn.Name].(*types.Func)
+	if !ok {
+		return false
+	}
+	sig, ok := obj.Type().(*types.Signature)
+	if !ok || sig.Params().Len() != 0 || sig.Results().Len() != 1 {
+		return false
+	}
+	result := sig.Results().At(0).Type()
+	stringType := types.Universe.Lookup("string").Type()
+	errorType := types.Universe.Lookup("error").Type()
+	switch fn.Name.Name {
+	case "Error", "String":
+		return types.Identical(result, stringType)
+	case "Unwrap":
+		if types.Identical(result, errorType) {
+			return true
+		}
+		slice, ok := result.(*types.Slice)
+		return ok && types.Identical(slice.Elem(), errorType)
+	default:
+		return false
+	}
 }
 
 // isFacade reports whether fn's body is a thin pass-through to a

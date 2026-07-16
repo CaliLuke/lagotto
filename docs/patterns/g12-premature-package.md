@@ -79,9 +79,9 @@ Two paths:
    the smell will self-resolve as the package gains siblings. The
    finding is just a checkpoint to confirm intent.
 
-An intentional visibility boundary may also be suppressed with
-`--exclude=<path-segment>`; G12 is advisory and should not force inlining a
-load-bearing package boundary.
+An intentional visibility boundary may also be suppressed without hiding the
+package from every other detector: `--suppress=G12@internal/slugify`. G12 is
+advisory and should not force inlining a load-bearing package boundary.
 
 When the package contains nothing but a single small struct, the
 struct often wants to live in the type system of its caller anyway.
