@@ -78,7 +78,7 @@ location starts with that value. JSON reports include
 
 | ID  | Smell                     | What it catches                                                                              |
 | --- | ------------------------- | -------------------------------------------------------------------------------------------- |
-| G1  | Receiver Monolith         | A named type's effective method set (incl. promoted via embedding) is ≥15 across ≥3 concerns |
+| G1  | Receiver Monolith         | A non-fluent named type's effective method set (incl. promoted) is ≥15 across ≥3 concerns    |
 | G1B | Decomposition Theatre     | 3+ type aliases in one package all resolving to a single underlying struct                   |
 | G1C | Aggregate Holder          | A struct with 5+ same-package sub-service fields whose pointee method counts total ≥25       |
 | G1D | Hidden Holder             | Thin holder + ≥3 pointer-keyed registry maps + ≥5 exported `*Holder` accessors               |
@@ -227,13 +227,13 @@ batches to keep peak memory proportional to a slice of the module.
 
 ## Severity guide
 
-- **CRITICAL** — Receiver Monolith ≥25 methods or ≥7 files with at least
-  four concrete concern groups (the fallback `other` bucket does not count);
-  Aggregate
+- **CRITICAL** — Receiver Monolith with a large method set dominated by
+  same-package embedding (structural decomposition-theatre evidence); Aggregate
   Holder with ≥50 pointee methods or ≥7 sub-services; Decomposition
   Theatre ≥6 aliases; Foreign Holder in ≥5 signatures across ≥3 packages;
   God Dependency Bag ≥12 fields.
-- **HIGH** — Receiver Monolith ≥15 methods; Aggregate Holder 5–6
+- **HIGH** — Receiver Monolith ≥15 methods across ≥3 non-fluent concerns;
+  Aggregate Holder 5–6
   sub-services with ≥25 pointee methods; Decomposition Theatre 3–5
   aliases; any Foreign Holder escape; Mixed-Concern File ≥600 lines;
   God Dependency Bag 8–11 fields.

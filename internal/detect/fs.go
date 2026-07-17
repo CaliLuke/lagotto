@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -40,9 +41,10 @@ func ScanFS(root string, pkgs []*packages.Package, exclude []string) []audit.Fin
 // build-tagged files are visible together. Loaded packages are not a
 // reliable directory listing because go/packages filters by build tags.
 type packageDirContents struct {
-	files       []string
-	packageName string
-	buildTagged map[string]bool
+	files          []string
+	packageName    string
+	buildTagged    map[string]bool
+	importsTesting bool
 }
 
 func collectPackageDirs(root string, pkgs []*packages.Package, exclude []string) map[string]packageDirContents {
@@ -62,7 +64,7 @@ func collectPackageDirs(root string, pkgs []*packages.Package, exclude []string)
 			return nil
 		}
 		fset := token.NewFileSet()
-		file, parseErr := parser.ParseFile(fset, path, nil, parser.PackageClauseOnly|parser.ParseComments)
+		file, parseErr := parser.ParseFile(fset, path, nil, parser.ImportsOnly|parser.ParseComments)
 		if parseErr != nil || file == nil || ast.IsGenerated(file) {
 			return nil
 		}
@@ -75,6 +77,12 @@ func collectPackageDirs(root string, pkgs []*packages.Package, exclude []string)
 		contents.files = append(contents.files, base)
 		if contents.packageName == "" && file.Name != nil {
 			contents.packageName = file.Name.Name
+		}
+		for _, spec := range file.Imports {
+			importPath, unquoteErr := strconv.Unquote(spec.Path.Value)
+			if unquoteErr == nil && importPath == "testing" {
+				contents.importsTesting = true
+			}
 		}
 		if contents.buildTagged == nil {
 			contents.buildTagged = map[string]bool{}
@@ -252,7 +260,7 @@ func prematurePackageFindings(root, dir, location string, contents packageDirCon
 	if len(contents.files) != 1 {
 		return nil
 	}
-	if samePath(root, dir) || contents.packageName == "main" {
+	if samePath(root, dir) || contents.packageName == "main" || contents.importsTesting {
 		return nil
 	}
 	return []audit.Finding{{

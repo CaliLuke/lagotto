@@ -27,9 +27,13 @@ For every named struct in the workspace:
 2. Filter to methods declared in the same package as the receiver,
    so a thin wrapper around an external type (e.g., embedding
    `*sql.DB`) is not flagged.
-3. Bucket method names by leading verb (Create/Get/Update/Delete/
-   Search/Run/Check/Connect/…) to count distinct concerns.
-4. Skip test doubles (`Fake*`, `Mock*`, `Stub*`, `Spy*`) and
+3. Bucket method names by leading verb to count distinct concerns. CRUD and
+   search verbs form one `data_access` concern because a complete repository,
+   ORM manager, or query surface is one cohesive responsibility.
+4. Exclude structurally fluent APIs when at least five methods—and at least a
+   third of the method set—transition to the receiver, an interface it
+   implements, or a sibling `Builder`, `Query`, or `Stage` type.
+5. Skip test doubles (`Fake*`, `Mock*`, `Stub*`, `Spy*`) and
    `testutil/`-style packages — they legitimately implement wide
    interfaces.
 
@@ -37,12 +41,12 @@ A finding fires when the type owns ≥15 methods spanning ≥3 concerns.
 
 | Severity | Condition |
 | -------- | --------- |
-| CRITICAL | ≥25 methods or ≥7 files, and ≥4 concrete concern groups |
-| HIGH     | ≥15 methods across ≥3 groups, but below the critical evidence bar |
+| CRITICAL | Large method set dominated by methods promoted from one same-package embedded type |
+| HIGH     | ≥15 methods across ≥3 groups without that structural embedding evidence |
 
-The fallback `other` bucket helps the detector decide that a receiver is
-not uniform, but it does not count as a concrete concern for CRITICAL
-severity. Raw size and undifferentiated names alone are not enough.
+Raw size and verb buckets are heuristic evidence, so direct method breadth
+alone never becomes CRITICAL. That severity requires structural evidence of
+coupling through same-package embedding.
 
 ## Positive example (fires)
 
@@ -83,6 +87,11 @@ Method count is high, but every method operates at the same
 abstraction level (connection lifecycle and I/O). lagotto's
 verb-prefix grouping puts all of them under one or two concern
 buckets, so the ≥3-concerns gate filters this out.
+
+Fluent builders and query APIs are also excluded when their return types show
+that the broad method set is a chained API surface. Similarly, create/read/
+update/delete/search methods on a persistence facade count as one
+`data_access` concern rather than five artificial responsibilities.
 
 ## How to fix it
 

@@ -126,6 +126,30 @@ func TestG12_TwoFiles_NoFire(t *testing.T) {
 	}
 }
 
+// TestG12_SharedTestingSupport_NoFire covers a legitimate one-file package
+// boundary: reusable assertions imported only by tests in sibling packages.
+// Importing testing from production-shaped source is direct evidence of that
+// role, so G12 should not ask callers to inline it.
+func TestG12_SharedTestingSupport_NoFire(t *testing.T) {
+	root := fakeDir(t, map[string]string{
+		"internal/check/check.go": `package check
+
+import "testing"
+
+func Valid(t testing.TB) { t.Helper() }
+`,
+	})
+	dir := filepath.Join(root, "internal", "check")
+	contents := collectPackageDirs(root, nil, nil)[dir]
+	if !contents.importsTesting {
+		t.Fatal("expected collector to recognize the testing import")
+	}
+	findings := prematurePackageFindings(root, dir, "internal/check", contents)
+	if containsID(findings, "G12") {
+		t.Fatalf("did not expect G12 for shared testing support, got %+v", findings)
+	}
+}
+
 // TestG3_BuildTagPairSprawl fires when a directory has 3+ paired
 // `*_stub.go` / `*.go` files — the conditional surface is wide
 // enough to deserve its own subpackage.

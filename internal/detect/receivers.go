@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"go/types"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 
@@ -354,22 +353,16 @@ func scanMethodSets(pkg *packages.Package, caches ...*typeutil.MethodSetCache) [
 		if len(methodNames) < 15 {
 			continue
 		}
+		// Fluent builders deliberately expose a broad method vocabulary on one
+		// chained abstraction. A substantial share of methods returning the
+		// receiver, an interface it implements, or a sibling builder/query type
+		// is structural evidence of that API shape rather than a monolith.
+		if isFluentAPI(named, ms, pkg) {
+			continue
+		}
 		concerns := detectConcerns(methodNames)
 		if len(concerns) < 3 {
 			continue
-		}
-
-		// File-count is reported as evidence but not gated. A
-		// monolith squeezed into 1–2 files is still a monolith;
-		// the original heuristic missed types that had been
-		// "decomposed" by reshuffling files within one package.
-		sev := audit.SevHigh
-		concreteConcerns := len(concerns)
-		if slices.Contains(concerns, "other") {
-			concreteConcerns--
-		}
-		if (len(methodNames) >= 25 || len(files) >= 7) && concreteConcerns >= 4 {
-			sev = audit.SevCritical
 		}
 
 		// Detect "decomposition theatre" via embedding: most methods
@@ -383,6 +376,15 @@ func scanMethodSets(pkg *packages.Package, caches ...*typeutil.MethodSetCache) [
 		if biggestPromoter != "" && biggestPromoterCount*2 > len(methodNames) {
 			theatreNote = fmt.Sprintf(" %d/%d methods are promoted via embedded *%s — removing the embedding is the structural fix, not file moves.",
 				biggestPromoterCount, len(methodNames), biggestPromoter)
+		}
+
+		// Direct method count and verb buckets are heuristic evidence, so a
+		// normal G1 finding remains HIGH regardless of raw size. CRITICAL is
+		// reserved for the stronger structural evidence that a wide method set
+		// is dominated by same-package embedding (decomposition theatre).
+		sev := audit.SevHigh
+		if theatreNote != "" && (len(methodNames) >= 25 || len(files) >= 7) {
+			sev = audit.SevCritical
 		}
 
 		ev := map[string]any{
@@ -416,6 +418,58 @@ func scanMethodSets(pkg *packages.Package, caches ...*typeutil.MethodSetCache) [
 		})
 	}
 	return findings
+}
+
+func isFluentAPI(receiver *types.Named, ms *types.MethodSet, pkg *packages.Package) bool {
+	methodCount, transitionCount := 0, 0
+	for i := 0; i < ms.Len(); i++ {
+		fn, ok := ms.At(i).Obj().(*types.Func)
+		if !ok || fn.Pkg() != pkg.Types {
+			continue
+		}
+		methodCount++
+		sig, ok := fn.Type().(*types.Signature)
+		if !ok {
+			continue
+		}
+		for j := 0; j < sig.Results().Len(); j++ {
+			if isFluentResult(sig.Results().At(j).Type(), receiver, pkg) {
+				transitionCount++
+				break
+			}
+		}
+	}
+	return transitionCount >= 5 && transitionCount*3 >= methodCount
+}
+
+func isFluentResult(result types.Type, receiver *types.Named, pkg *packages.Package) bool {
+	result = types.Unalias(result)
+	if ptr, ok := result.(*types.Pointer); ok {
+		result = types.Unalias(ptr.Elem())
+	}
+	if named, ok := result.(*types.Named); ok {
+		if named.Obj() == receiver.Obj() {
+			return true
+		}
+		if named.Obj().Pkg() == pkg.Types && hasFluentTypeSuffix(named.Obj().Name()) {
+			return true
+		}
+	}
+	iface, ok := result.Underlying().(*types.Interface)
+	if !ok {
+		return false
+	}
+	iface.Complete()
+	return types.Implements(types.NewPointer(receiver), iface) || types.Implements(receiver, iface)
+}
+
+func hasFluentTypeSuffix(name string) bool {
+	for _, suffix := range []string{"Builder", "Query", "Stage"} {
+		if strings.HasSuffix(name, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func dominantPromoter(promotedFrom map[string]int) (string, int) {
