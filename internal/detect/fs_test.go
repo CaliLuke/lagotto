@@ -184,6 +184,32 @@ func Valid(t testing.TB) { t.Helper() }
 	}
 }
 
+func TestG12_ReusedProductionPackage_NoFire(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"shared/shared.go": "package shared\n\nfunc Value() int { return 1 }\n",
+		"first/first.go":   "package first\n\nimport \"example.com/test/shared\"\n\nvar Value = shared.Value()\n",
+		"second/second.go": "package second\n\nimport \"example.com/test/shared\"\n\nvar Value = shared.Value()\n",
+	})
+	root := pkgs[0].Module.Dir
+	for _, pkg := range pkgs {
+		pkg.GoFiles = nil // Audit mode retains only CompiledGoFiles.
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relativeRoot, err := filepath.Rel(workingDirectory, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	findings := ScanFS(relativeRoot, pkgs, nil)
+	for _, finding := range findings {
+		if finding.SmellID == "G12" && finding.Location == "shared" {
+			t.Fatalf("did not expect a production package reused by two packages to fire G12, got %+v", finding)
+		}
+	}
+}
+
 // TestG3_BuildTagPairSprawl fires when a directory has 3+ paired
 // `*_stub.go` / `*.go` files — the conditional surface is wide
 // enough to deserve its own subpackage.

@@ -102,6 +102,42 @@ type Conn struct{}
 	}
 }
 
+func TestG1_SingleAmbiguousVerbDoesNotCreateConcern(t *testing.T) {
+	src := "package foo\n\ntype KnowledgeBase struct{}\n"
+	for i := 0; i < 10; i++ {
+		src += fmt.Sprintf("func (*KnowledgeBase) Get%d() {}\n", i)
+		src += fmt.Sprintf("func (*KnowledgeBase) Transform%d() {}\n", i)
+	}
+	src += "func (*KnowledgeBase) OpenNodes() {}\n"
+	if findings := ScanReceivers(fakeModule(t, map[string]string{"knowledge.go": src})); containsID(findings, "G1") {
+		t.Fatalf("did not expect one ambiguous Open method to manufacture a connection concern, got %+v", findings)
+	}
+}
+
+func TestG1_UnexportedConcernMethodsStillCount(t *testing.T) {
+	src := "package foo\n\ntype Expression struct{}\n"
+	for i := 0; i < 5; i++ {
+		src += fmt.Sprintf("func (*Expression) Get%d() {}\n", i)
+		src += fmt.Sprintf("func (*Expression) validate%d() {}\n", i)
+		src += fmt.Sprintf("func (*Expression) transform%d() {}\n", i)
+	}
+	if findings := ScanReceivers(fakeModule(t, map[string]string{"expression.go": src})); !containsID(findings, "G1") {
+		t.Fatalf("expected unexported validation methods to support a concern group, got %+v", findings)
+	}
+}
+
+func TestG1_DispatchSchedulingAndProcessingFormExecutionConcern(t *testing.T) {
+	src := "package foo\n\ntype WorkerPool struct{}\n"
+	for i := 0; i < 5; i++ {
+		src += fmt.Sprintf("func (*WorkerPool) Get%d() {}\n", i)
+		src += fmt.Sprintf("func (*WorkerPool) process%d() {}\n", i)
+		src += fmt.Sprintf("func (*WorkerPool) coordinate%d() {}\n", i)
+	}
+	if findings := ScanReceivers(fakeModule(t, map[string]string{"pool.go": src})); !containsID(findings, "G1") {
+		t.Fatalf("expected processing methods to support an execution concern, got %+v", findings)
+	}
+}
+
 func TestG1_RawSizeAndOtherBucketDoNotBecomeCritical(t *testing.T) {
 	src := "package foo\n\ntype Service struct{}\n"
 	for i := 0; i < 10; i++ {
@@ -341,6 +377,35 @@ type D = inner.Real
 	}
 }
 
+func TestG1B_DistinctGenericInstantiations_NoFire(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{"a.go": `package foo
+
+type Request[T any] struct { Params T }
+
+type StringRequest = Request[string]
+type IntRequest = Request[int]
+type BoolRequest = Request[bool]
+type BytesRequest = Request[[]byte]
+`})
+	if findings := ScanReceivers(pkgs); containsID(findings, "G1B") {
+		t.Fatalf("did not expect different generic instantiations to form one alias cluster, got %+v", findings)
+	}
+}
+
+func TestG1B_SameGenericInstantiation_Fires(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{"a.go": `package foo
+
+type Request[T any] struct { Params T }
+
+type First = Request[string]
+type Second = Request[string]
+type Third = Request[string]
+`})
+	if findings := ScanReceivers(pkgs); !containsID(findings, "G1B") {
+		t.Fatalf("expected aliases of the same generic instantiation to form a cluster, got %+v", findings)
+	}
+}
+
 // TestG1C_AggregateHolder fires when a struct aggregates ≥5
 // same-package sub-services whose pointee method counts total ≥25.
 // This is the second-stage theatre: aliases replaced by named fields,
@@ -468,6 +533,31 @@ type Holder struct { A *Alias1; B *Alias2; C *Alias3; D *Alias4; E *Alias5 }
 	}
 	if findings := ScanReceivers(fakeModule(t, map[string]string{"a.go": src})); !containsID(findings, "G1C") {
 		t.Fatalf("expected alias-typed fields to count toward G1C, got %v", findingIDs(findings))
+	}
+}
+
+func TestG1C_ValueFieldsAndRepeatedPointeeDoNotInflateServices(t *testing.T) {
+	src := `package foo
+
+type Cache[T any] struct{}
+type Service struct{}
+type Holder struct {
+	service *Service
+	first Cache[string]
+	second Cache[int]
+	third Cache[bool]
+	fourth Cache[[]byte]
+	fifth *Service
+}
+`
+	for i := 0; i < 25; i++ {
+		src += fmt.Sprintf("func (*Service) Run%d() {}\n", i)
+	}
+	for i := 0; i < 6; i++ {
+		src += fmt.Sprintf("func (*Cache[T]) Get%d() {}\n", i)
+	}
+	if findings := ScanReceivers(fakeModule(t, map[string]string{"a.go": src})); containsID(findings, "G1C") {
+		t.Fatalf("did not expect value caches or repeated pointers to count as distinct sub-services, got %+v", findings)
 	}
 }
 

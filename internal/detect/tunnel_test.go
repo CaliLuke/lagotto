@@ -86,6 +86,29 @@ func TestG8_RealPackage_NoFire(t *testing.T) {
 	}
 }
 
+func TestG8_PublicFacadeForInternalImplementation_NoFire(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"go.mod": "module example.com/test\ngo 1.21\n",
+		"internal/wire/wire.go": `package wire
+
+type Message struct{}
+type Request struct{}
+type Response struct{}
+`,
+		"jsonrpc/jsonrpc.go": `package jsonrpc
+
+import "example.com/test/internal/wire"
+
+type Message = wire.Message
+type Request = wire.Request
+type Response = wire.Response
+`,
+	})
+	if findings := ScanReExportTunnel(pkgs); containsID(findings, "G8") {
+		t.Fatalf("did not expect a public facade over an internal implementation to fire G8, got %+v", findings)
+	}
+}
+
 func TestG8_TypeConversionsDoNotCountAsReExports(t *testing.T) {
 	pkgs := fakeModule(t, map[string]string{
 		"inner/inner.go": "package inner\n\ntype ID int\ntype Age int\ntype Count int\n",

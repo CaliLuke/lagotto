@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-07-17
+
+### Fixed
+
+- G1B keeps generic type arguments in alias-cluster identity, so distinct
+  request instantiations no longer collapse into a CRITICAL false positive.
+- G1 concern groups now classify exported and unexported method names
+  consistently and require three supporting methods, preventing one ambiguous
+  verb such as `OpenNodes` from manufacturing a third concern without losing
+  validation-heavy expression types. Dispatch, scheduling, and processing
+  methods now contribute execution evidence.
+- G1C counts distinct pointer sub-service types rather than value fields or
+  repeated instances of one generic cache implementation.
+- G8 recognizes public API facades over same-module `internal` implementations.
+- G12 excludes one-file packages reused by at least two production packages;
+  audit mode preserves the lightweight import metadata needed for this check.
+
 ## [0.2.5] - 2026-07-16
 
 ### Fixed

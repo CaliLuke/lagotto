@@ -27,9 +27,12 @@ For every named struct in the workspace:
 2. Filter to methods declared in the same package as the receiver,
    so a thin wrapper around an external type (e.g., embedding
    `*sql.DB`) is not flagged.
-3. Bucket method names by leading verb to count distinct concerns. CRUD and
-   search verbs form one `data_access` concern because a complete repository,
-   ORM manager, or query surface is one cohesive responsibility.
+3. Bucket method names case-insensitively by leading verb to count distinct
+   concerns, including unexported helpers such as `validatePayload`. A group
+   needs at least three methods before it counts, so one ambiguous name such as
+   `OpenNodes` cannot manufacture a connection concern. CRUD and search verbs
+   form one `data_access` concern because a complete repository, ORM manager,
+   or query surface is one cohesive responsibility.
 4. Exclude structurally fluent APIs when at least five methods—and at least a
    third of the method set—transition to the receiver, an interface it
    implements, or a sibling `Builder`, `Query`, or `Stage` type.

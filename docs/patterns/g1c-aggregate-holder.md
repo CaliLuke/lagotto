@@ -34,9 +34,10 @@ they need.
 ## What lagotto checks
 
 For every named struct in each package, the detector inspects fields
-whose type is a pointer to a same-package named struct. For each such
-field it looks up the pointee's effective method set via
-`types.NewMethodSet` and sums the counts.
+whose type is a pointer to a same-package named struct. For each distinct
+pointee type it looks up the effective method set via `types.NewMethodSet`
+and sums the counts. Repeated pointers to one type count once, and value
+fields such as per-result generic caches do not count as sub-services.
 
 A finding fires when the holder has ≥5 such fields and the total
 pointee method count is ≥25.
