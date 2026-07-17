@@ -40,7 +40,7 @@ func ScanReceivers(pkgs []*packages.Package) []audit.Finding {
 		findings = append(findings, scanHiddenHolders(pkg, &cache)...)
 	}
 	findings = append(findings, scanForeignHolders(pkgs)...)
-	return findings
+	return calibrateG1Severity(findings, pkgs)
 }
 
 // scanHiddenHolders flags the third-stage Decomposition Theatre pattern:
@@ -379,10 +379,11 @@ func scanMethodSets(pkg *packages.Package, caches ...*typeutil.MethodSetCache) [
 		}
 
 		// Direct method count and verb buckets are heuristic evidence, so a
-		// normal G1 finding remains HIGH regardless of raw size. CRITICAL is
+		// normal G1 finding starts at MEDIUM. Cross-package signature coupling
+		// may elevate it after every package has been scanned. CRITICAL is
 		// reserved for the stronger structural evidence that a wide method set
 		// is dominated by same-package embedding (decomposition theatre).
-		sev := audit.SevHigh
+		sev := audit.SevMedium
 		if theatreNote != "" && (len(methodNames) >= 25 || len(files) >= 7) {
 			sev = audit.SevCritical
 		}

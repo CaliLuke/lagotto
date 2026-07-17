@@ -11,17 +11,23 @@ import (
 
 	"github.com/CaliLuke/lagotto/internal/audit"
 	"github.com/CaliLuke/lagotto/internal/pkgload"
+	"github.com/CaliLuke/lagotto/internal/version"
 )
 
 // Flags carries the persistent CLI flag values shared by every
 // subcommand. cmd/lagotto/main.go binds these to cobra persistent
 // flags; the detect package reads them at RunE time.
 type Flags struct {
-	Tags     string
-	Format   string
-	Exclude  []string
-	Suppress []string
-	FailOn   string
+	Tags             string
+	Format           string
+	Exclude          []string
+	Suppress         []string
+	FailOn           string
+	ConfigPath       string
+	LoadedConfigPath string
+	Mixed            MixedOptions
+	MixedSeverity    string
+	LayerPolicy      []LayerPolicyRule
 }
 
 // argRoot resolves the optional path argument to the directory the
@@ -40,6 +46,11 @@ func argRoot(args []string) string {
 		}
 	}
 	return root
+}
+
+// ScanRoot exposes the normalized target root for CLI configuration loading.
+func ScanRoot(args []string) string {
+	return argRoot(args)
 }
 
 // runScan is the shared body of every subcommand: load packages,
@@ -90,8 +101,26 @@ func emitScanReport(f *Flags, root string, loadErrs []string, rawFindings []audi
 	if err != nil {
 		return err
 	}
+	findings = audit.ConsolidateRepositoryPatterns(findings)
+	mixed := f.effectiveMixedOptions()
 	report := &audit.Report{
-		Root:               root,
+		Version: version.String(),
+		Root:    root,
+		Config:  f.LoadedConfigPath,
+		Configuration: audit.EffectiveConfiguration{
+			Exclude:  append([]string(nil), f.Exclude...),
+			Suppress: append([]string(nil), f.Suppress...),
+			FailOn:   f.FailOn,
+			Mixed: audit.MixedConfiguration{
+				MinLines:                     mixed.MinLines,
+				MinComponentMembers:          mixed.MinComponentMembers,
+				MinComponentLines:            mixed.MinComponentLines,
+				MinSingleComponentComplexity: mixed.MinSingleComponentComplexity,
+				Severity:                     mixed.Severity,
+				CohesiveMinLines:             mixed.CohesiveMinLines,
+			},
+			LayerPolicy: layerPolicyReportConfiguration(f.LayerPolicy),
+		},
 		Tags:               audit.ResolvedTags(f.Tags),
 		LoadErrors:         loadErrs,
 		SuppressedFindings: suppressed,
@@ -137,12 +166,28 @@ func runAuditScan(f *Flags, args []string) error {
 		findings = append(findings, ScanStutter(pkgs)...)
 		findings = append(findings, ScanFacades(pkgs)...)
 		findings = append(findings, ScanDepsBag(pkgs)...)
-		findings = append(findings, ScanMixedConcern(pkgs)...)
+		findings = append(findings, ScanMixedConcernWithOptions(pkgs, f.effectiveMixedOptions())...)
 		findings = append(findings, ScanInitCoupling(pkgs)...)
 		findings = append(findings, ScanReExportTunnel(pkgs)...)
+		findings = append(findings, ScanLayerPolicy(pkgs, f.LayerPolicy)...)
 	}
 	findings = append(findings, ScanFS(root, nil, f.Exclude)...)
 	return emitScanReport(f, root, loadErrs, findings)
+}
+
+func layerPolicyReportConfiguration(rules []LayerPolicyRule) []audit.LayerPolicyConfiguration {
+	configuration := make([]audit.LayerPolicyConfiguration, 0, len(rules))
+	for _, rule := range rules {
+		configuration = append(configuration, audit.LayerPolicyConfiguration{
+			Name:                       rule.Name,
+			Paths:                      append([]string(nil), rule.Paths...),
+			Dependencies:               append([]string(nil), rule.Dependencies...),
+			GeneratedTypes:             append([]string(nil), rule.GeneratedTypes...),
+			MaxCoordinatedDependencies: rule.MaxCoordinatedDependencies,
+			Severity:                   rule.Severity,
+		})
+	}
+	return configuration
 }
 
 func appendUnique(existing []string, values ...string) []string {
@@ -253,18 +298,38 @@ func DepsCmd(f *Flags) *cobra.Command {
 	}
 }
 
-// MixedCmd returns the `mixed` subcommand: G5.
+// MixedCmd returns the `mixed` subcommand: G5 and G13.
 func MixedCmd(f *Flags) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "mixed [path]",
-		Short: "Find Mixed-Concern Files (3+ unrelated decl groups).",
-		Args:  cobra.MaximumNArgs(1),
+		Short: "Find substantial disconnected declaration clusters in very large files.",
+		Long: `Find substantial disconnected declaration clusters in very large files.
+
+Complexity values are reported for prioritization only; they never trigger
+findings. Complexity can only filter out a trivial single-callable island after
+the structural cohesion and size rules have already nominated it.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding {
-				return ScanMixedConcern(pkgs)
+				return ScanMixedConcernWithOptions(pkgs, f.effectiveMixedOptions())
 			})
 		},
 	}
+	cmd.Flags().IntVar(&f.Mixed.MinLines, "min-lines", f.Mixed.MinLines, "minimum physical file lines for G5")
+	cmd.Flags().IntVar(&f.Mixed.MinComponentMembers, "min-component-members", f.Mixed.MinComponentMembers, "primary declarations that make a component substantial (OR --min-component-lines)")
+	cmd.Flags().IntVar(&f.Mixed.MinComponentLines, "min-component-lines", f.Mixed.MinComponentLines, "declaration lines that nominate a component (OR --min-component-members)")
+	cmd.Flags().IntVar(&f.Mixed.MinSingleComponentComplexity, "min-single-component-complexity", f.Mixed.MinSingleComponentComplexity, "cyclomatic complexity required when one callable qualifies by lines alone (0 disables)")
+	cmd.Flags().IntVar(&f.Mixed.CohesiveMinLines, "cohesive-min-lines", f.Mixed.CohesiveMinLines, "minimum physical file lines for LOW G13 (0 disables)")
+	cmd.Flags().StringVar(&f.MixedSeverity, "severity", f.MixedSeverity, "G5 finding severity: critical | high | medium | low")
+	return cmd
+}
+
+func (f *Flags) effectiveMixedOptions() MixedOptions {
+	options := f.Mixed
+	if severity, ok := audit.ParseSeverity(f.MixedSeverity); ok {
+		options.Severity = severity
+	}
+	return options
 }
 
 // InitsCmd returns the `inits` subcommand: G7.
@@ -290,6 +355,20 @@ func TunnelCmd(f *Flags) *cobra.Command {
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding {
 				return ScanReExportTunnel(pkgs)
+			})
+		},
+	}
+}
+
+// LayersCmd returns the `layers` subcommand: configured G14 policies.
+func LayersCmd(f *Flags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "layers [path]",
+		Short: "Find configured cross-layer orchestration policy violations.",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding {
+				return ScanLayerPolicy(pkgs, f.LayerPolicy)
 			})
 		},
 	}

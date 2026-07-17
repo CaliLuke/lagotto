@@ -24,10 +24,8 @@ parameters, non-constructor return types, and exported struct fields. Test
 fixture packages and conventional `New`/`Open`/`Make`/`Build`/`Create`
 constructors are exempt.
 
-| Severity | Condition |
-| --- | --- |
-| CRITICAL | At least five signature sites across at least three packages |
-| HIGH | Any production signature in a foreign package |
+G1E is **MEDIUM**. Its signature sites are concrete and actionable, but the
+finding describes architectural coupling rather than a correctness failure.
 
 ## Example
 

@@ -76,28 +76,14 @@ func scanForeignHolders(pkgs []*packages.Package) []audit.Finding {
 		}
 	}
 
-	packageCounts := map[string]map[string]bool{}
-	siteCounts := map[string]int{}
-	for _, use := range uses {
-		if packageCounts[use.candidate.key] == nil {
-			packageCounts[use.candidate.key] = map[string]bool{}
-		}
-		packageCounts[use.candidate.key][use.consumer] = true
-		siteCounts[use.candidate.key] += len(use.sites)
-	}
-
 	var findings []audit.Finding
 	for _, useKey := range sortedKeys(uses) {
 		use := uses[useKey]
 		sites := sortedKeys(use.sites)
-		sev := audit.SevHigh
-		if siteCounts[use.candidate.key] >= 5 && len(packageCounts[use.candidate.key]) >= 3 {
-			sev = audit.SevCritical
-		}
 		findings = append(findings, audit.Finding{
 			Smell:    "Foreign Holder",
 			SmellID:  "G1E",
-			Severity: sev,
+			Severity: audit.SevMedium,
 			Location: use.location + " (*" + use.candidate.typeName + ")",
 			Message: fmt.Sprintf("Package %s keeps broad holder *%s from %s in %d production signature site(s), preserving the holder as a cross-package chokepoint.",
 				use.consumer, use.candidate.typeName, use.candidate.pkgPath, len(sites)),

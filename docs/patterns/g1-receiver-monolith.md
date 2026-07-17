@@ -36,17 +36,24 @@ For every named struct in the workspace:
 5. Skip test doubles (`Fake*`, `Mock*`, `Stub*`, `Spy*`) and
    `testutil/`-style packages — they legitimately implement wide
    interfaces.
+6. Scan other packages for the concrete receiver type. Operational parameters,
+   methods, interfaces, aliases, and exported concrete accessors are separated
+   from dependency-injection/state fields. This consumer coupling—not raw
+   method count—controls whether an ordinary finding is MEDIUM or HIGH.
 
 A finding fires when the type owns ≥15 methods spanning ≥3 concerns.
 
 | Severity | Condition |
 | -------- | --------- |
 | CRITICAL | Large method set dominated by methods promoted from one same-package embedded type |
-| HIGH     | ≥15 methods across ≥3 groups without that structural embedding evidence |
+| HIGH     | At least 3 operational sites, or at least 1 operational site plus 4 total operational/state sites |
+| MEDIUM   | ≥15 methods across ≥3 groups without demonstrated consumer coupling |
 
-Raw size and verb buckets are heuristic evidence, so direct method breadth
-alone never becomes CRITICAL. That severity requires structural evidence of
-coupling through same-package embedding.
+Raw size and verb buckets are heuristic evidence, so direct method breadth is
+MEDIUM. Stored dependency fields alone remain MEDIUM because they commonly
+describe intentional service wiring. HIGH requires an operational concrete-type
+escape as well as breadth; CRITICAL requires structural evidence of same-package
+embedding theatre. Evidence reports operational and state sites separately.
 
 ## Positive example (fires)
 

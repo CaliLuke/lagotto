@@ -66,8 +66,8 @@ func TestG1_DirectBreadthAloneIsNotCritical(t *testing.T) {
 		src += fmt.Sprintf("func (*Service) Export%d() {}\n", i)
 	}
 	for _, finding := range ScanReceivers(fakeModule(t, map[string]string{"service.go": src})) {
-		if finding.SmellID == "G1" && finding.Severity != audit.SevHigh {
-			t.Fatalf("expected direct heuristic breadth to remain HIGH, got %+v", finding)
+		if finding.SmellID == "G1" && finding.Severity != audit.SevMedium {
+			t.Fatalf("expected uncoupled heuristic breadth to be MEDIUM, got %+v", finding)
 		}
 	}
 }
@@ -107,14 +107,110 @@ func TestG1_RawSizeAndOtherBucketDoNotBecomeCritical(t *testing.T) {
 	for _, finding := range findings {
 		if finding.SmellID == "G1" {
 			found = true
-			if finding.Severity != audit.SevHigh {
-				t.Fatalf("expected raw size with only two concrete concerns to remain HIGH, got %+v", finding)
+			if finding.Severity != audit.SevMedium {
+				t.Fatalf("expected raw size with only two concrete concerns to remain MEDIUM, got %+v", finding)
 			}
 		}
 	}
 	if !found {
-		t.Fatal("expected a G1 finding at HIGH severity")
+		t.Fatal("expected a G1 finding at MEDIUM severity")
 	}
+}
+
+func TestG1_CrossPackageConcreteCouplingElevatesHigh(t *testing.T) {
+	service := "package service\n\ntype Broad struct{}\n"
+	for i := 0; i < 5; i++ {
+		service += fmt.Sprintf("func (*Broad) Run%d() {}\n", i)
+		service += fmt.Sprintf("func (*Broad) Validate%d() {}\n", i)
+		service += fmt.Sprintf("func (*Broad) Connect%d() {}\n", i)
+	}
+	consumer := `package consumer
+
+import "example.com/test/service"
+
+type Owner struct { Service *service.Broad }
+func Start(value *service.Broad) {}
+func Stop(value *service.Broad) {}
+func Execute(value *service.Broad) {}
+`
+	findings := ScanReceivers(fakeModule(t, map[string]string{
+		"service/service.go":   service,
+		"consumer/consumer.go": consumer,
+	}))
+	for _, finding := range findings {
+		if finding.SmellID != "G1" {
+			continue
+		}
+		if finding.Severity != audit.SevHigh || finding.Evidence["cross_package_operational_count"] != 3 || finding.Evidence["cross_package_state_count"] != 1 {
+			t.Fatalf("expected three operational sites to elevate G1 while reporting stored state separately, got %+v", finding)
+		}
+		return
+	}
+	t.Fatal("expected G1 finding")
+}
+
+func TestG1_DependencyInjectionFieldsAloneRemainMedium(t *testing.T) {
+	service := "package service\n\ntype Broad struct{}\n"
+	for i := 0; i < 5; i++ {
+		service += fmt.Sprintf("func (*Broad) Run%d() {}\n", i)
+		service += fmt.Sprintf("func (*Broad) Validate%d() {}\n", i)
+		service += fmt.Sprintf("func (*Broad) Connect%d() {}\n", i)
+	}
+	consumer := `package consumer
+
+import "example.com/test/service"
+
+type First struct { Service *service.Broad }
+type Second struct { Service *service.Broad }
+type Third struct { Service *service.Broad }
+func assemble() *service.Broad { return nil }
+`
+	findings := ScanReceivers(fakeModule(t, map[string]string{
+		"service/service.go":   service,
+		"consumer/consumer.go": consumer,
+	}))
+	for _, finding := range findings {
+		if finding.SmellID != "G1" {
+			continue
+		}
+		if finding.Severity != audit.SevMedium || finding.Evidence["cross_package_operational_count"] != 0 || finding.Evidence["cross_package_state_count"] != 3 {
+			t.Fatalf("expected DI fields and an unexported producer to remain MEDIUM, got %+v", finding)
+		}
+		return
+	}
+	t.Fatal("expected G1 finding")
+}
+
+func TestG1_ExportedConcreteAccessorPlusStoredStateElevatesHigh(t *testing.T) {
+	service := "package service\n\ntype Broad struct{}\n"
+	for i := 0; i < 5; i++ {
+		service += fmt.Sprintf("func (*Broad) Run%d() {}\n", i)
+		service += fmt.Sprintf("func (*Broad) Validate%d() {}\n", i)
+		service += fmt.Sprintf("func (*Broad) Connect%d() {}\n", i)
+	}
+	consumer := `package consumer
+
+import "example.com/test/service"
+
+type First struct { Service *service.Broad }
+type Second struct { Service *service.Broad }
+type Third struct { Service *service.Broad }
+func Current() *service.Broad { return nil }
+`
+	findings := ScanReceivers(fakeModule(t, map[string]string{
+		"service/service.go":   service,
+		"consumer/consumer.go": consumer,
+	}))
+	for _, finding := range findings {
+		if finding.SmellID != "G1" {
+			continue
+		}
+		if finding.Severity != audit.SevHigh || finding.Evidence["cross_package_operational_count"] != 1 || finding.Evidence["cross_package_signature_count"] != 4 {
+			t.Fatalf("expected an exported concrete escape plus broad stored state to elevate G1, got %+v", finding)
+		}
+		return
+	}
+	t.Fatal("expected G1 finding")
 }
 
 // TestG1_PromotedViaEmbedding ensures methods promoted onto an outer

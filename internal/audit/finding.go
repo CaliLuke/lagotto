@@ -32,11 +32,45 @@ type Finding struct {
 // can tell a clean audit from a degraded one; when it is non-empty,
 // detectors may have skipped the affected packages.
 type Report struct {
-	Root               string    `json:"root"`
-	Tags               []string  `json:"tags,omitempty"`
-	LoadErrors         []string  `json:"load_errors,omitempty"`
-	SuppressedFindings int       `json:"suppressed_findings,omitempty"`
-	Findings           []Finding `json:"findings"`
+	Version            string                 `json:"version"`
+	Root               string                 `json:"root"`
+	Config             string                 `json:"config,omitempty"`
+	Configuration      EffectiveConfiguration `json:"configuration"`
+	Tags               []string               `json:"tags,omitempty"`
+	LoadErrors         []string               `json:"load_errors,omitempty"`
+	SuppressedFindings int                    `json:"suppressed_findings,omitempty"`
+	Findings           []Finding              `json:"findings"`
+}
+
+// EffectiveConfiguration records the policy actually used for an audit. It is
+// deliberately resolved (defaults, repository config, and CLI overrides) so a
+// saved JSON report can be reproduced without reconstructing flag precedence.
+type EffectiveConfiguration struct {
+	Exclude     []string                   `json:"exclude"`
+	Suppress    []string                   `json:"suppress,omitempty"`
+	FailOn      string                     `json:"fail_on,omitempty"`
+	Mixed       MixedConfiguration         `json:"mixed"`
+	LayerPolicy []LayerPolicyConfiguration `json:"layer_policy,omitempty"`
+}
+
+// LayerPolicyConfiguration records one resolved G14 policy.
+type LayerPolicyConfiguration struct {
+	Name                       string   `json:"name"`
+	Paths                      []string `json:"paths"`
+	Dependencies               []string `json:"dependencies"`
+	GeneratedTypes             []string `json:"generated_types"`
+	MaxCoordinatedDependencies int      `json:"max_coordinated_dependencies"`
+	Severity                   Severity `json:"severity"`
+}
+
+// MixedConfiguration is the resolved policy for G5 and G13.
+type MixedConfiguration struct {
+	MinLines                     int      `json:"min_lines"`
+	MinComponentMembers          int      `json:"min_component_members"`
+	MinComponentLines            int      `json:"min_component_lines"`
+	MinSingleComponentComplexity int      `json:"min_single_component_complexity"`
+	Severity                     Severity `json:"severity"`
+	CohesiveMinLines             int      `json:"cohesive_min_lines"`
 }
 
 // IncompleteLoadError means the report was emitted, but one or more

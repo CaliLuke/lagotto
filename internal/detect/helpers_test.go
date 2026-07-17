@@ -36,7 +36,7 @@ func fakeModule(t *testing.T, files map[string]string) []*packages.Package {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
 			packages.NeedImports | packages.NeedTypes |
-			packages.NeedSyntax | packages.NeedTypesInfo,
+			packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedModule,
 		Dir: dir,
 	}
 	pkgs, err := packages.Load(cfg, "./...")

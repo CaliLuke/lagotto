@@ -2,9 +2,8 @@
 
 Three or more files in a flat directory share a name prefix
 (`node_create.go`, `node_delete.go`, `node_update.go`,
-`node_search.go`). The cluster wants to be a subpackage; the prefix
-is doing namespace work that a `node/` directory could do
-naturally.
+`node_search.go`). The prefix may describe a healthy organization convention,
+or it may be doing namespace work that a `node/` directory could do naturally.
 
 ## Why this matters
 
@@ -26,10 +25,8 @@ first `_`, `-`, or `.` separator. One-character prefixes are ignored; common
 two-character domain prefixes such as `db_` and `io_` count. Recognized GOOS
 and GOARCH suffix suites are excluded. A finding fires at 3 or more files.
 
-| Severity | Condition               |
-| -------- | ----------------------- |
-| MEDIUM   | ≥4 files share a prefix |
-| LOW      | 3 files share a prefix  |
+Prefix shape alone is always **LOW**. Lagotto does not infer semantic
+disconnection from filenames, even for large clusters.
 
 ## Positive example (fires)
 
@@ -42,7 +39,8 @@ graph/
 └── routes.go
 ```
 
-The four `node_*` files want to be `graph/node/`.
+The four `node_*` files warrant a quick boundary review. They do not prove that
+`graph/node/` would be better.
 
 ## Negative example (does NOT fire)
 
@@ -68,10 +66,9 @@ graph/
 └── routes.go
 ```
 
-If the prefixed files share types or constants, those move to the
-new subpackage too. If they're tightly coupled to the parent
-package's other types, you may need to widen the parent's
-interfaces — that's the cost of the layout improvement.
+Make this change only when the cluster evolves independently and the new
+package has a useful API boundary. If the files are tightly coupled to the
+parent package, the prefix is probably healthy organization and should remain.
 
 ## Related
 

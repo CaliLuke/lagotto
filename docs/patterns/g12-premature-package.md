@@ -24,6 +24,11 @@ This smell is **LOW** by design — single-file packages are common
 and often legitimate. lagotto flags them so reviewers can decide;
 many findings will be intentional.
 
+When at least five remain after per-location suppressions, Lagotto groups them
+into one `Single-File Package Pattern` finding. The evidence retains every path
+and filename, but the report treats the repository-wide convention as one
+observation rather than dozens of independent defects.
+
 ## What lagotto checks
 
 For each directory under the audit root, it counts non-test source

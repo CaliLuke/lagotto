@@ -1,108 +1,166 @@
-# G5 — Mixed-Concern File
+# G5 — Disconnected File Concerns
 
-A single `.go` file holds three or more unrelated declaration groups
-(types, methods, validation, utilities) over 200+ lines. The file may be
-a junk drawer disguised as a module: a reader has to scan past
-several unrelated concerns to find the one they're looking for.
+A `.go` file is at least 600 lines and its top-level declarations form two or
+more substantial disconnected reference clusters. This is evidence of
+potentially separable implementation islands—not a conclusion that the public
+API or package must be decomposed.
 
 ## Why this matters
 
-Go encourages many small files in one package, since the package is
-the unit of encapsulation. Within a package, files are organizational
-hints: this file holds the types, that file holds the validation,
-this other file holds the route handlers. When one file mixes types,
-methods, validation, and utilities, those hints break and readers
-revert to grep.
+Go's package, not its file, is the encapsulation boundary. Keeping a feature's
+types, methods, validation, constructors, and helpers together is idiomatic and
+often highly cohesive. Declaration kinds therefore say very little about
+responsibility.
 
-The 200-line floor exists because modest mixed files—including cohesive
-commands that keep a type, its methods, and small helpers together—are
-not a real navigation problem. The smell only matters at sizes where
-reading top-to-bottom costs real time.
+Reference relationships are stronger evidence. If one group of declarations
+uses and implements only members of that group while another group does the
+same, the file may contain independently navigable operations or phases. A file
+split can improve navigation and change isolation without changing its package
+or exported API.
 
 ## What lagotto checks
 
-For each non-test source file, the detector classifies declarations
-into groups:
+For every non-test, non-generated source file, Lagotto builds an intra-file
+graph with one node per top-level type, function, method, variable, or constant.
+It adds edges for:
 
-- **types** — `type X struct {…}`, `type Y interface {…}`, etc.
-- **methods** — functions with a receiver
-- **validation** — functions whose names start with `Validate`,
-  `Verify`, or `Check`
-- **utilities** — other top-level functions
+- direct calls and identifier references;
+- methods and their receiver types;
+- constructors, parameters, and result types;
+- multiple declarations using the same package-level state or declaration;
+- registrations using the same constructor from a dot-imported DSL;
+- concrete types that implicitly satisfy the same named interface.
 
-A finding fires when the file has ≥3 distinct groups and ≥200
-physical file lines. `const` and `var` blocks are supporting declarations,
-not independent concerns, so they never contribute to the group count.
+The interface edge matters because Go conformance is structural. A file holding
+one interface, several implementations, their constructors, and shared helpers
+is one cohesive interface family even when an implementation never explicitly
+names the interface.
 
-| Severity | Condition     |
-| -------- | ------------- |
-| HIGH     | ≥600 lines    |
-| MEDIUM   | 200–599 lines |
+By default, a connected component is nominated as substantial when it contains
+at least two primary declarations (types, functions, or methods), or one
+declaration spanning at least 40 lines. Lagotto then calculates cyclomatic
+complexity only after the file becomes a candidate. A single callable that
+qualified solely through the line threshold must have complexity at least 5.
+Multi-member components and non-callable declarations are not rejected by a
+function-complexity metric. A finding requires by default:
+
+- at least 600 physical file lines; and
+- at least two substantial connected components.
+
+Tiny disconnected helpers are retained as minor-component evidence but do not
+manufacture a finding by themselves.
+
+| Severity | Condition                                               |
+| -------- | ------------------------------------------------------- |
+| MEDIUM   | 600+ lines with 2+ substantial disconnected components  |
+
+## Configuration
+
+For one-off analysis, `lagotto mixed` exposes:
+
+```text
+--min-lines
+--min-component-members
+--min-component-lines
+--min-single-component-complexity
+--severity
+--cohesive-min-lines
+```
+
+For durable policy used by both `audit` and `mixed`, check in
+`.lagotto.yaml`:
+
+```yaml
+version: 1
+suppress:
+  - G5@tqlgen/parser.go
+mixed:
+  min_lines: 600
+  min_component_members: 2
+  min_component_lines: 40
+  min_single_component_complexity: 5
+  severity: medium
+  cohesive_min_lines: 1200
+```
+
+Command-line `mixed` flags override repository settings. Every G5 finding's
+JSON evidence records the effective thresholds so a reviewer can reproduce
+why a component qualified.
+
+Set `min_single_component_complexity` to zero to disable post-candidate
+complexity validation. Complexity never initiates a repository-wide scan: it
+runs only for files already nominated by the cohesion and size rules, and it
+never creates a finding by itself.
+
+`cohesive_min_lines` configures the separate LOW-severity G13 signal; set it to
+zero to disable G13. It does not relax or alter G5's disconnected-component
+requirement.
+
+## Evidence
+
+JSON output includes every member of each substantial component with its name,
+kind, start line, end line, declaration line count, and—where applicable—its
+cyclomatic complexity. File-level evidence includes total and maximum
+complexity plus the five highest-complexity named functions under
+`prioritization_hotspots`, as well as total, minor, ignored zero-primary, and
+complexity-rejected component counts. These categories explain every raw graph
+component. The human-readable suggestion names the smallest candidate island
+so reviewers do not have to reconstruct the graph manually.
 
 ## Positive example (fires)
 
 ```go
-package billing
+type Parser struct{ /* ... */ }
+func (Parser) Parse(input string) Node { return normalize(input) }
+func normalize(input string) Node { /* ... */ }
 
-const defaultGracePeriod = 7 * 24 * time.Hour
-
-type Invoice struct{ /* … */ }
-type LineItem struct{ /* … */ }
-
-func (i *Invoice) Total() money.Amount { /* … */ }
-
-func ValidateInvoice(i *Invoice) error { /* … */ }
-
-func formatCurrency(a money.Amount) string { /* … */ }
-func parseDueDate(s string) (time.Time, error) { /* … */ }
-// … 30 more helpers
+type Renderer struct{ /* ... */ }
+func (Renderer) Render(node Node) string { return decorate(node) }
+func decorate(node Node) string { /* ... */ }
 ```
 
-Constants + types + methods + validation + utilities, all in one
-500-line file. A reader looking for "how is the invoice total
-calculated" has to skip past validation and helpers; a reader looking
-for "what does ValidateInvoice check" has to skip past types and
-helpers.
+If this file is 600+ lines and the parser and renderer families do not refer to
+one another, they form two evidence-backed candidate islands.
 
-## Negative example (does NOT fire)
+## Negative example: interface family (does not fire)
 
 ```go
-// invoice.go — types only
-package billing
+type Filter interface { Validate() error }
 
-type Invoice struct{ /* … */ }
-type LineItem struct{ /* … */ }
-type Tax struct{ /* … */ }
-// 80 more types
+type Equal struct{ Value string }
+func (Equal) Validate() error { return nil }
+func NewEqual(v string) Filter { return Equal{Value: v} }
+
+type Range struct{ Min, Max int }
+func (Range) Validate() error { return nil }
+func NewRange(min, max int) Filter { return Range{Min: min, Max: max} }
 ```
 
-A single-concern file at any length. The reader knows exactly what's
-in it.
+The concrete types implement the same interface, and the constructors return
+that interface. The graph treats the declarations as one cohesive family.
 
-## How to fix it
+## How to respond
 
-Review semantic cohesion before splitting. Declaration categories are
-navigation evidence, not proof that the code has separate responsibilities.
-When the groups do change independently, a split may map to:
+Treat G5 as a backlog review signal, not a mandatory refactor or correctness
+failure. Inspect the listed component members and ask whether the candidate
+island changes independently or is difficult to navigate.
 
-- `types.go` — type declarations
-- `methods.go` (or `<type>.go` per type) — methods
-- `validation.go` — validators
-- `helpers.go` would itself be a [G11](g11-junk-drawer.md)
-  smell — give helper files content-named identifiers instead
-  (`format.go`, `parse.go`).
+When it is independent, move the component together into a content-named file
+in the same package. Preserve the public API unless separate evidence supports
+an API change. When the graph misses a semantic relationship—reflection,
+registration, generated conventions, or domain coupling can do this—keep the
+file intact and suppress the exact location:
 
-If the file mixes work for two unrelated types, that's a signal the
-two types might want to live in different files (or different
-packages).
-
-If the file is intentionally cohesive, keep it and suppress the exact
-location, for example `--suppress=G5@billing/invoice.go`.
+```bash
+lagotto audit --suppress=G5@billing/invoice.go .
+```
 
 ## Related
 
-- [G11 — Junk Drawer](g11-junk-drawer.md): same anti-pattern at the
-  filename level (`utils.go`, `helpers.go`).
-- [G9 — Prefix Cluster](g9-prefix-cluster.md): if splitting reveals
-  many `<concern>_<thing>.go` files, the cluster might want to be a
-  subpackage.
+- [G13 — Large Cohesive File](g13-large-cohesive-file.md): preserves a LOW
+  navigation signal for very large connected files without weakening G5.
+
+- [G11 — Generic Filename](g11-junk-drawer.md): a content-naming signal whose
+  severity is weighted by declaration and line counts.
+- [G9 — Prefix Cluster](g9-prefix-cluster.md): if a file split reveals many
+  `<concern>_<thing>.go` files, the cluster may warrant a package-level review.

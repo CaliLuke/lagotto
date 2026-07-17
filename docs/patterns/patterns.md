@@ -9,10 +9,11 @@ The smells are not all equally bad. Use the severity in the
 order below as the suggested remediation order when a single package
 trips multiple detectors.
 
-## The big five (always fix first)
+## Type-boundary signals
 
-Type-design problems. File reshuffling cannot resolve them, so they
-gate every other improvement.
+Type-design review signals. File reshuffling cannot resolve them; act when the
+evidence shows independently changing responsibilities or consumer coupling,
+and suppress intentionally broad APIs.
 
 - [G1 — Receiver Monolith](g1-receiver-monolith.md): one named type
   owns too many methods spanning too many concerns.
@@ -29,6 +30,14 @@ gate every other improvement.
 - [G4 — God Dependency Bag](g4-god-dependency-bag.md): a `Deps`
   struct that mixes types from many unrelated packages.
 
+## Repository layer policy
+
+Opt-in, typed rules for architecture boundaries specific to a repository.
+
+- [G14 — Cross-Layer Orchestration](g14-cross-layer-orchestration.md): a
+  configured boundary method coordinates several configured services or stores
+  while mapping configured generated types.
+
 ## File and package shape
 
 Mid-cost cleanup. Triggers usually point at a file that should be
@@ -38,16 +47,20 @@ split or a directory that wants to be a subpackage.
   the package name (`lanes.LaneConfig`).
 - [G3 — Build-Tag Pair Sprawl](g3-build-tag-pair-sprawl.md): too
   many `*_stub.go` / `*.go` paired files in one directory.
-- [G5 — Mixed-Concern File](g5-mixed-concern-file.md): one file
-  holds three or more unrelated decl groups.
+- [G5 — Disconnected File Concerns](g5-mixed-concern-file.md): a 600+ line
+  file contains two or more substantial disconnected declaration-reference
+  clusters.
 - [G9 — Prefix Cluster](g9-prefix-cluster.md): three or more files
   share a name prefix.
 - [G10 — Shadow Suffix](g10-shadow-suffix.md): file names ending in
   `_helpers`, `_utils`, `_handlers`, etc.
-- [G11 — Junk Drawer](g11-junk-drawer.md): a file literally named
+- [G11 — Generic Filename](g11-junk-drawer.md): a file literally named
   `helpers.go`, `utils.go`, `common.go`, …
 - [G12 — Premature Package](g12-premature-package.md): a directory
   with one source file.
+- [G13 — Large Cohesive File](g13-large-cohesive-file.md): a very large file
+  whose reference graph remains cohesive, reported only as a navigation or
+  layer-policy review signal.
 
 ## Code-smell adjacent
 

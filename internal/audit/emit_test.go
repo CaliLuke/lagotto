@@ -60,6 +60,44 @@ func TestEmitJSONIncludesLoadErrors(t *testing.T) {
 	}
 }
 
+func TestEmitJSONIncludesVersionAndEffectiveConfiguration(t *testing.T) {
+	report := &Report{
+		Version: "0.2.4-dev",
+		Root:    ".",
+		Configuration: EffectiveConfiguration{
+			Exclude: []string{"vendor"},
+			Mixed: MixedConfiguration{
+				MinLines:                     600,
+				MinComponentMembers:          2,
+				MinComponentLines:            40,
+				MinSingleComponentComplexity: 5,
+				Severity:                     SevMedium,
+				CohesiveMinLines:             1200,
+			},
+			LayerPolicy: []LayerPolicyConfiguration{{
+				Name:                       "thin-transport",
+				Paths:                      []string{"internal/transport/**"},
+				Dependencies:               []string{"internal/service/**"},
+				GeneratedTypes:             []string{"gen/**"},
+				MaxCoordinatedDependencies: 1,
+				Severity:                   SevMedium,
+			}},
+		},
+	}
+	out := captureStdout(t, func() {
+		if err := Emit(report, "json"); err != nil {
+			t.Error(err)
+		}
+	})
+	var decoded Report
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Version != "0.2.4-dev" || decoded.Configuration.Mixed.CohesiveMinLines != 1200 || decoded.Configuration.Mixed.MinSingleComponentComplexity != 5 || len(decoded.Configuration.LayerPolicy) != 1 {
+		t.Fatalf("reproducibility metadata did not round-trip: %+v", decoded)
+	}
+}
+
 func TestValidateFormat(t *testing.T) {
 	if err := ValidateFormat("json"); err != nil {
 		t.Error(err)
