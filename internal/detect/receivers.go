@@ -234,13 +234,16 @@ func scanAggregateHolders(pkg *packages.Package, caches ...*typeutil.MethodSetCa
 			continue
 		}
 		var samePkgFields []string
+		seenPointees := map[*types.TypeName]bool{}
 		totalMethods := 0
 		for i := 0; i < st.NumFields(); i++ {
 			f := st.Field(i)
 			ft := types.Unalias(f.Type())
-			if ptr, ok := ft.(*types.Pointer); ok {
-				ft = types.Unalias(ptr.Elem())
+			ptr, ok := ft.(*types.Pointer)
+			if !ok {
+				continue
 			}
+			ft = types.Unalias(ptr.Elem())
 			fnamed, ok := ft.(*types.Named)
 			if !ok {
 				continue
@@ -251,6 +254,13 @@ func scanAggregateHolders(pkg *packages.Package, caches ...*typeutil.MethodSetCa
 			if _, isStruct := fnamed.Underlying().(*types.Struct); !isStruct {
 				continue
 			}
+			// Several fields of one implementation type are several instances,
+			// not several sub-services. In particular, generic caches commonly
+			// appear once per result type and must not manufacture a holder.
+			if seenPointees[fnamed.Obj()] {
+				continue
+			}
+			seenPointees[fnamed.Obj()] = true
 			ms := cache.MethodSet(types.NewPointer(fnamed))
 			methodCount := 0
 			for j := 0; j < ms.Len(); j++ {
@@ -498,7 +508,11 @@ func selectMethodSetCache(caches []*typeutil.MethodSetCache) *typeutil.MethodSet
 // names like `Mutator = graphOps`, `Searcher = graphOps`, ...).
 func scanAliasClusters(pkg *packages.Package) []audit.Finding {
 	scope := pkg.Types.Scope()
-	clusters := map[string][]string{}
+	type aliasCluster struct {
+		target  string
+		aliases []string
+	}
+	clusters := map[string]*aliasCluster{}
 	for _, name := range scope.Names() {
 		if isTestDouble(name) {
 			continue
@@ -525,11 +539,27 @@ func scanAliasClusters(pkg *packages.Package) []audit.Finding {
 		if isTestDouble(named.Obj().Name()) {
 			continue
 		}
-		clusters[named.Obj().Name()] = append(clusters[named.Obj().Name()], name)
+		// Preserve type arguments in the cluster identity. ClientRequest[A]
+		// and ClientRequest[B] share a generic origin but are distinct
+		// instantiated types with different APIs at their parameter boundary.
+		key := types.TypeString(target, func(p *types.Package) string { return p.Path() })
+		label := types.TypeString(target, func(p *types.Package) string {
+			if p == pkg.Types {
+				return ""
+			}
+			return p.Name()
+		})
+		cluster := clusters[key]
+		if cluster == nil {
+			cluster = &aliasCluster{target: label}
+			clusters[key] = cluster
+		}
+		cluster.aliases = append(cluster.aliases, name)
 	}
 
 	var findings []audit.Finding
-	for target, aliases := range clusters {
+	for _, cluster := range clusters {
+		target, aliases := cluster.target, cluster.aliases
 		if len(aliases) < 3 {
 			continue
 		}

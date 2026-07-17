@@ -136,9 +136,9 @@ keep strict dependency boundaries in a tool such as depguard.
 
 | ID  | Smell                     | What it catches                                                                              |
 | --- | ------------------------- | -------------------------------------------------------------------------------------------- |
-| G1  | Receiver Monolith         | A non-fluent named type's effective method set (incl. promoted) is ≥15 across ≥3 concerns    |
-| G1B | Decomposition Theatre     | 3+ type aliases in one package all resolving to a single underlying struct                   |
-| G1C | Aggregate Holder          | A struct with 5+ same-package sub-service fields whose pointee method counts total ≥25       |
+| G1  | Receiver Monolith         | A non-fluent named type has ≥15 effective methods across ≥3 supported concern groups         |
+| G1B | Decomposition Theatre     | 3+ type aliases in one package resolving to the same exact named type or instantiation       |
+| G1C | Aggregate Holder          | A struct with 5+ distinct same-package pointer sub-service types totaling ≥25 methods        |
 | G1D | Hidden Holder             | Thin holder + ≥3 pointer-keyed registry maps + ≥5 exported `*Holder` accessors               |
 | G1E | Foreign Holder            | A decomposed holder still appears in production signatures in downstream packages           |
 | G2  | Stutter Names             | Exported type/function repeats the package name (`lanes.LaneConfig`)                         |
@@ -147,11 +147,11 @@ keep strict dependency boundaries in a tool such as depguard.
 | G5  | Disconnected File Concerns | A 600+ line file contains 2+ substantial disconnected declaration-reference clusters       |
 | G6  | Facade Method             | A method whose body is a thin pass-through (≤3 lines) to a function in another package       |
 | G7  | Init Coupling             | Multiple `func init()` in a package with cross-file ordering dependencies                    |
-| G8  | Internal Re-Export Tunnel | ≥50% of a package's exported declarations re-export from a dominant deeper package           |
+| G8  | Internal Re-Export Tunnel | ≥50% of exports tunnel to one deeper package, excluding public facades over `internal`       |
 | G9  | Prefix Cluster            | 3+ files share a ≥2-character name prefix in a flat directory                                |
 | G10 | Shadow Suffix             | File names ending in `_helpers`, `_utils`, `_handlers`, `_actions`, `_responses`             |
 | G11 | Generic Filename          | Generic filename weighted by its top-level declaration count and physical line count         |
-| G12 | Premature Package         | A directory containing only 1 source file (excluding tests, doc, generated)                  |
+| G12 | Premature Package         | A one-source-file package without shared-test or repeated production reuse                   |
 | G13 | Large Cohesive File       | A 1200+ line cohesive file worth a LOW navigation or layer-policy review                     |
 | G14 | Cross-Layer Orchestration | A configured layer coordinates too many services/stores while mapping generated boundary types |
 

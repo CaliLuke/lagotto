@@ -26,8 +26,14 @@ the alias cluster directly.
 
 For each package's scope, it lists every `*types.TypeName` whose
 `IsAlias()` returns true, resolves the target via `types.Unalias`,
-and groups aliases by target. A cluster of 3+ aliases pointing at a
-single same-package named type fires.
+and groups aliases by the exact target type, including generic type
+arguments. A cluster of 3+ aliases pointing at a single same-package
+named type or exact instantiation fires.
+
+Aliases of different generic instantiations do not form a cluster:
+`Request[CreateParams]` and `Request[ListParams]` share an implementation
+origin, but their parameter boundary is different and the aliases are not a
+cosmetic receiver decomposition.
 
 Cross-package re-export aliases (`type A = otherpkg.Real`) do not
 fire — that's a legitimate compatibility shape.

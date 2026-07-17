@@ -20,7 +20,8 @@ import (
 // ScanFS aggregates every filesystem-level smell (G3, G9, G10, G11,
 // G12) for each package directory under root. It walks the filesystem
 // directly because a loaded package only exposes files selected for
-// the current build tags. The pkgs parameter remains for API stability.
+// the current build tags. Loaded package metadata is used only to map
+// directories to import paths for G12 production-reuse evidence.
 func ScanFS(root string, pkgs []*packages.Package, exclude []string) []audit.Finding {
 	dirs := collectPackageDirs(root, pkgs, exclude)
 	var findings []audit.Finding
@@ -39,12 +40,15 @@ func ScanFS(root string, pkgs []*packages.Package, exclude []string) []audit.Fin
 
 // collectPackageDirs walks the filesystem so mutually exclusive
 // build-tagged files are visible together. Loaded packages are not a
-// reliable directory listing because go/packages filters by build tags.
+// reliable directory listing because go/packages filters by build tags;
+// they contribute import-path identity only.
 type packageDirContents struct {
 	files          []string
 	packageName    string
 	buildTagged    map[string]bool
 	importsTesting bool
+	imports        map[string]bool
+	importers      []string
 	fileStats      map[string]sourceFileStats
 }
 
@@ -54,7 +58,6 @@ type sourceFileStats struct {
 }
 
 func collectPackageDirs(root string, pkgs []*packages.Package, exclude []string) map[string]packageDirContents {
-	_ = pkgs // Package loading selects files by build tags; this detector must not.
 	out := map[string]packageDirContents{}
 	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -86,8 +89,14 @@ func collectPackageDirs(root string, pkgs []*packages.Package, exclude []string)
 		}
 		for _, spec := range file.Imports {
 			importPath, unquoteErr := strconv.Unquote(spec.Path.Value)
-			if unquoteErr == nil && importPath == "testing" {
-				contents.importsTesting = true
+			if unquoteErr == nil {
+				if contents.imports == nil {
+					contents.imports = map[string]bool{}
+				}
+				contents.imports[importPath] = true
+				if importPath == "testing" {
+					contents.importsTesting = true
+				}
 			}
 		}
 		if contents.buildTagged == nil {
@@ -105,7 +114,63 @@ func collectPackageDirs(root string, pkgs []*packages.Package, exclude []string)
 		sort.Strings(contents.files)
 		out[dir] = contents
 	}
+	recordProductionImporters(out, pkgs)
 	return out
+}
+
+func recordProductionImporters(contentsByDir map[string]packageDirContents, pkgs []*packages.Package) {
+	dirsByPackage := map[string]string{}
+	packagesByDir := map[string]string{}
+	dirsByAbsolutePath := map[string]string{}
+	for dir := range contentsByDir {
+		absoluteDir, err := filepath.Abs(dir)
+		if err == nil {
+			dirsByAbsolutePath[filepath.Clean(absoluteDir)] = dir
+		}
+	}
+	for _, pkg := range pkgs {
+		if pkg == nil || pkg.PkgPath == "" {
+			continue
+		}
+		files := pkg.GoFiles
+		if len(files) == 0 {
+			files = pkg.CompiledGoFiles
+		}
+		if len(files) == 0 {
+			continue
+		}
+		absoluteDir, err := filepath.Abs(filepath.Dir(files[0]))
+		if err != nil {
+			continue
+		}
+		dir, ok := dirsByAbsolutePath[filepath.Clean(absoluteDir)]
+		if ok {
+			dirsByPackage[pkg.PkgPath] = dir
+			packagesByDir[dir] = pkg.PkgPath
+		}
+	}
+	importers := map[string]map[string]bool{}
+	for importerDir, contents := range contentsByDir {
+		importerPath := packagesByDir[importerDir]
+		if importerPath == "" || isTestPackage(importerPath) || contents.importsTesting {
+			continue
+		}
+		for importedPath := range contents.imports {
+			targetDir, ok := dirsByPackage[importedPath]
+			if !ok || importedPath == importerPath {
+				continue
+			}
+			if importers[targetDir] == nil {
+				importers[targetDir] = map[string]bool{}
+			}
+			importers[targetDir][importerPath] = true
+		}
+	}
+	for dir, packages := range importers {
+		contents := contentsByDir[dir]
+		contents.importers = sortedKeys(packages)
+		contentsByDir[dir] = contents
+	}
 }
 
 func sourceFileStatistics(fset *token.FileSet, file *ast.File) sourceFileStats {
@@ -321,6 +386,9 @@ func prematurePackageFindings(root, dir, location string, contents packageDirCon
 		return nil
 	}
 	if samePath(root, dir) || contents.packageName == "main" || contents.importsTesting {
+		return nil
+	}
+	if len(contents.importers) >= 2 {
 		return nil
 	}
 	return []audit.Finding{{

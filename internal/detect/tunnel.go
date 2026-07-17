@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/types"
 	"sort"
+	"strings"
 
 	"golang.org/x/tools/go/packages"
 
@@ -105,6 +106,9 @@ func ScanReExportTunnel(pkgs []*packages.Package) []audit.Finding {
 		if float64(topCount)/float64(reExports) < 0.5 {
 			continue
 		}
+		if isPublicFacadeForInternalPackage(pkg, topTarget) {
+			continue
+		}
 		sev := audit.SevMedium
 		if ratio >= 0.8 {
 			sev = audit.SevHigh
@@ -133,6 +137,32 @@ func ScanReExportTunnel(pkgs []*packages.Package) []audit.Finding {
 		})
 	}
 	return findings
+}
+
+// isPublicFacadeForInternalPackage recognizes the Go-specific case where a
+// public package deliberately exposes a supported subset of an internal
+// implementation. External users cannot import the target directly, so the
+// outer package provides a real API boundary rather than a redundant tunnel.
+func isPublicFacadeForInternalPackage(pkg *packages.Package, target string) bool {
+	if pkg.Module == nil || pkg.Module.Path == "" {
+		return false
+	}
+	modulePath := strings.TrimSuffix(pkg.Module.Path, "/")
+	if target != modulePath && !strings.HasPrefix(target, modulePath+"/") {
+		return false
+	}
+	targetRelative := strings.TrimPrefix(strings.TrimPrefix(target, modulePath), "/")
+	packageRelative := strings.TrimPrefix(strings.TrimPrefix(pkg.PkgPath, modulePath), "/")
+	return hasPathSegment(targetRelative, "internal") && !hasPathSegment(packageRelative, "internal")
+}
+
+func hasPathSegment(path, segment string) bool {
+	for _, part := range strings.Split(path, "/") {
+		if part == segment {
+			return true
+		}
+	}
+	return false
 }
 
 // selectorPackage resolves the package path that an expression's

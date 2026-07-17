@@ -38,6 +38,8 @@ files. A directory with exactly one source file fires, except:
 - The audit root itself (a tool's `main` package is often one file)
 - `package main` directories (canonical command entry points)
 - generated files with the standard Go generated-code header
+- packages imported by at least two other production packages (the boundary
+  demonstrably groups a reused capability)
 
 | Severity | Condition                              |
 | -------- | -------------------------------------- |
@@ -87,6 +89,10 @@ Two paths:
 One-file packages whose source imports `testing` are automatically treated as
 shared test support and excluded: their package boundary lets tests in sibling
 packages reuse helpers without turning production packages into test packages.
+
+Likewise, a one-file package imported by at least two production packages is
+excluded. Repeated reuse is direct evidence that the package groups a shared
+capability rather than merely adding a visibility layer for one caller.
 
 Another intentional visibility boundary may be suppressed without hiding the
 package from every other detector: `--suppress=G12@internal/slugify`. G12 is

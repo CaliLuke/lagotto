@@ -150,6 +150,7 @@ func runAuditScan(f *Flags, args []string) error {
 		fmt.Fprintf(os.Stderr, "lagotto: warning: no Go packages found under %q\n", root)
 	}
 	findings := ScanReceivers(typedPkgs)
+	findings = append(findings, ScanFS(root, typedPkgs, f.Exclude)...)
 	paths := make([]string, 0, len(typedPkgs))
 	for _, pkg := range typedPkgs {
 		paths = append(paths, pkg.PkgPath)
@@ -171,7 +172,6 @@ func runAuditScan(f *Flags, args []string) error {
 		findings = append(findings, ScanReExportTunnel(pkgs)...)
 		findings = append(findings, ScanLayerPolicy(pkgs, f.LayerPolicy)...)
 	}
-	findings = append(findings, ScanFS(root, nil, f.Exclude)...)
 	return emitScanReport(f, root, loadErrs, findings)
 }
 

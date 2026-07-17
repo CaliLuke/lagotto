@@ -33,6 +33,10 @@ It fires when at least half of exported declarations are re-exports and one
 target accounts for at least half of those re-exports. At 50–79%, remediation
 keeps genuine local declarations; at ≥80%, deleting the tunnel is appropriate.
 
+A public package that exposes a supported subset of a same-module `internal`
+implementation is excluded. External users cannot import the target directly,
+so the public package contributes a real API and visibility boundary.
+
 | Severity | Condition                                             |
 | -------- | ----------------------------------------------------- |
 | HIGH     | ≥80% of declarations are re-exports                    |
@@ -97,8 +101,9 @@ The right answer depends on why the tunnel exists.
   package's contents up. The tunnel disappears.
 - **Selective re-exports** (only some inner names should be public):
   keep the inner package private (`internal/`) and accept the
-  re-exports as the public API. Document them with godoc so they
-  don't read as a barrel.
+  re-exports as the public API. Lagotto excludes this shape when the target is
+  a same-module `internal` package. Document the facade with godoc so its
+  supported surface is clear.
 
 ## Related
 
