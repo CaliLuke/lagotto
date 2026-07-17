@@ -47,6 +47,9 @@ func ScanFacades(pkgs []*packages.Package) []audit.Finding {
 				if isStandardContractMethod(pkg, fn) {
 					continue
 				}
+				if implementsNamedPackageInterface(pkg, fn) {
+					continue
+				}
 				if isFacade(pkg, fn) {
 					recv := receiverTypeName(pkg.TypesInfo, fn.Recv.List[0])
 					target := delegateTarget(pkg, fn)
@@ -90,6 +93,59 @@ func ScanFacades(pkgs []*packages.Package) []audit.Finding {
 		}
 	}
 	return findings
+}
+
+// implementsNamedPackageInterface reports whether fn is part of a named
+// interface contract declared by the package. Go implementations are
+// structural, so there is no explicit declaration to inspect: the receiver
+// must implement the complete interface and the interface must contain this
+// method. In that case a concise cross-package call is an implementation of
+// the contract, not evidence that the method itself is redundant.
+func implementsNamedPackageInterface(pkg *packages.Package, fn *ast.FuncDecl) bool {
+	if pkg.Types == nil || pkg.TypesInfo == nil {
+		return false
+	}
+	method, ok := pkg.TypesInfo.Defs[fn.Name].(*types.Func)
+	if !ok {
+		return false
+	}
+	sig, ok := method.Type().(*types.Signature)
+	if !ok || sig.Recv() == nil {
+		return false
+	}
+	receiver := sig.Recv().Type()
+	scope := pkg.Types.Scope()
+	for _, name := range scope.Names() {
+		typeName, ok := scope.Lookup(name).(*types.TypeName)
+		if !ok || typeName.IsAlias() {
+			continue
+		}
+		named, ok := typeName.Type().(*types.Named)
+		if !ok {
+			continue
+		}
+		iface, ok := named.Underlying().(*types.Interface)
+		if !ok {
+			continue
+		}
+		iface.Complete()
+		if !iface.IsMethodSet() || !interfaceContainsMethod(iface, fn.Name.Name) {
+			continue
+		}
+		if types.Implements(receiver, iface) {
+			return true
+		}
+	}
+	return false
+}
+
+func interfaceContainsMethod(iface *types.Interface, name string) bool {
+	for i := 0; i < iface.NumMethods(); i++ {
+		if iface.Method(i).Name() == name {
+			return true
+		}
+	}
+	return false
 }
 
 // isStandardContractMethod excludes canonical methods whose names and

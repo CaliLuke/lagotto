@@ -12,12 +12,12 @@ func detectConcerns(methods []string) []string {
 		verbs  []string
 		concer string
 	}{
-		{[]string{"Create", "Insert", "Add", "New"}, "create"},
-		{[]string{"Get", "List", "Find", "Read", "Load", "Fetch"}, "read"},
-		{[]string{"Update", "Edit", "Patch", "Set", "Replace", "Upsert", "Modify"}, "update"},
-		{[]string{"Delete", "Remove", "Drop", "Purge", "Clear"}, "delete"},
+		// CRUD verbs describe one data-access responsibility on repositories,
+		// managers, and query APIs. Treating every operation as an independent
+		// concern makes complete persistence APIs look less cohesive than they
+		// are. G1 should require responsibilities beyond CRUD breadth.
+		{[]string{"Create", "Insert", "Add", "New", "Get", "List", "Find", "Read", "Load", "Fetch", "Update", "Edit", "Patch", "Set", "Replace", "Upsert", "Modify", "Delete", "Remove", "Drop", "Purge", "Clear", "Search", "Query", "Lookup"}, "data_access"},
 		{[]string{"Merge", "Combine"}, "merge"},
-		{[]string{"Search", "Query", "Lookup"}, "search"},
 		{[]string{"Run", "Execute", "Exec", "Apply"}, "execute"},
 		{[]string{"Check", "Validate", "Verify", "Audit"}, "validate"},
 		{[]string{"Connect", "Disconnect", "Close", "Open", "Reconnect", "Reset"}, "connect"},

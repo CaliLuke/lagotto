@@ -35,10 +35,12 @@ state, dispatch through an embedded external interface, or wrap a standard
 library boundary are reported at LOW with context-aware guidance because they
 may be load-bearing adapters or test seams.
 
-Canonical interface-contract signatures `Error() string`, `String() string`,
-and `Unwrap() error` / `Unwrap() []error` are excluded. Their method names and
-shapes are dictated by standard Go contracts, so a thin implementation is not
-evidence of a redundant facade.
+Methods required by a named interface in the same package are excluded when
+the receiver implements the complete interface. Canonical interface-contract
+signatures `Error() string`, `String() string`, and `Unwrap() error` /
+`Unwrap() []error` are also excluded even when the standard interface is not
+declared locally. In both cases, a thin implementation is not evidence of a
+redundant API.
 
 In-package calls are skipped — the smell is specifically about
 methods that exist only to bridge a package boundary.
@@ -89,6 +91,9 @@ boundary in the middle, it's not a thin pass-through.
 
 Also treated conservatively:
 
+- Concise implementations of a named package interface. For example,
+  `ToTypeQL` and `RollbackTypeQL` may legitimately be short when concrete
+  migration operations implement a shared `Operation` contract.
 - Methods on types that satisfy an external interface contract
   (e.g., `(c *Conn) Read(p []byte) (int, error)` that calls
   `bufio.Reader.Read`). The interface forces the method to exist;

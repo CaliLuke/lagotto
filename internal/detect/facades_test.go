@@ -216,6 +216,32 @@ func (p Problem) Unwrap() error { return errors.Unwrap(p.cause) }
 	}
 }
 
+func TestG6_NamedPackageInterfaceContractsDoNotFire(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"inner/inner.go": `package inner
+
+func Render(name string) string { return name }
+func Undo(name string) string { return name }
+`,
+		"outer/outer.go": `package outer
+
+import "example.com/test/inner"
+
+type Operation interface {
+	Render() string
+	Undo() string
+}
+
+type Add struct{ Name string }
+func (a Add) Render() string { return inner.Render(a.Name) }
+func (a Add) Undo() string { return inner.Undo(a.Name) }
+`,
+	})
+	if findings := ScanFacades(pkgs); containsID(findings, "G6") {
+		t.Fatalf("did not expect package-interface implementations to be facades, got %+v", findings)
+	}
+}
+
 func TestG6_ContractNameWithDifferentSignatureStillFires(t *testing.T) {
 	pkgs := fakeModule(t, map[string]string{
 		"inner/inner.go": "package inner\n\nfunc Render(prefix string) string { return prefix }\n",

@@ -79,7 +79,11 @@ Two paths:
    the smell will self-resolve as the package gains siblings. The
    finding is just a checkpoint to confirm intent.
 
-An intentional visibility boundary may also be suppressed without hiding the
+One-file packages whose source imports `testing` are automatically treated as
+shared test support and excluded: their package boundary lets tests in sibling
+packages reuse helpers without turning production packages into test packages.
+
+Another intentional visibility boundary may be suppressed without hiding the
 package from every other detector: `--suppress=G12@internal/slugify`. G12 is
 advisory and should not force inlining a load-bearing package boundary.
 

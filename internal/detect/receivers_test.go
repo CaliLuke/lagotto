@@ -10,8 +10,6 @@ import (
 
 // TestG1_ReceiverMonolith_Direct verifies the headline detector fires
 // when a single named struct owns ≥15 methods spanning ≥3 concerns.
-// The synthetic Big type spans create/read/update/delete to cross the
-// concern threshold without any embedding tricks.
 func TestG1_ReceiverMonolith_Direct(t *testing.T) {
 	src := `package foo
 
@@ -19,10 +17,10 @@ type Big struct{}
 
 `
 	for _, m := range []string{
-		"CreateA", "CreateB", "CreateC", "CreateD",
-		"GetA", "GetB", "GetC", "GetD",
-		"UpdateA", "UpdateB", "UpdateC",
-		"DeleteA", "DeleteB", "DeleteC", "DeleteD",
+		"CreateA", "CreateB", "GetA", "GetB", "UpdateA", "DeleteA",
+		"RunA", "RunB", "RunC",
+		"ValidateA", "ValidateB", "ValidateC",
+		"ConnectA", "ConnectB", "ConnectC",
 	} {
 		src += "func (b *Big) " + m + "() {}\n"
 	}
@@ -30,6 +28,47 @@ type Big struct{}
 	findings := ScanReceivers(pkgs)
 	if !containsID(findings, "G1") {
 		t.Fatalf("expected G1, got %v", findingIDs(findings))
+	}
+}
+
+func TestG1_CRUDSurfaceIsOneConcern(t *testing.T) {
+	src := "package foo\n\ntype Manager struct{}\n"
+	for _, verb := range []string{"Create", "Insert", "Get", "List", "Find", "Read", "Update", "Edit", "Set", "Delete", "Remove", "Search", "Query", "Lookup", "Upsert"} {
+		src += "func (*Manager) " + verb + "Thing() {}\n"
+	}
+	if findings := ScanReceivers(fakeModule(t, map[string]string{"manager.go": src})); containsID(findings, "G1") {
+		t.Fatalf("did not expect a complete CRUD surface to be split into artificial concerns, got %+v", findings)
+	}
+}
+
+func TestG1_FluentAPI_NoFire(t *testing.T) {
+	src := `package foo
+
+type Query struct{}
+`
+	for _, method := range []string{"Filter", "Order", "Limit", "Offset", "Where", "Set", "Delete", "Update"} {
+		src += "func (q *Query) " + method + "() *Query { return q }\n"
+	}
+	for _, method := range []string{"Execute", "Run", "Validate", "Count", "Status", "Connect", "Close"} {
+		src += "func (*Query) " + method + "() {}\n"
+	}
+	if findings := ScanReceivers(fakeModule(t, map[string]string{"query.go": src})); containsID(findings, "G1") {
+		t.Fatalf("did not expect a structurally fluent API to be a receiver monolith, got %+v", findings)
+	}
+}
+
+func TestG1_DirectBreadthAloneIsNotCritical(t *testing.T) {
+	src := "package foo\n\ntype Service struct{}\n"
+	for i := 0; i < 8; i++ {
+		src += fmt.Sprintf("func (*Service) Run%d() {}\n", i)
+		src += fmt.Sprintf("func (*Service) Validate%d() {}\n", i)
+		src += fmt.Sprintf("func (*Service) Connect%d() {}\n", i)
+		src += fmt.Sprintf("func (*Service) Export%d() {}\n", i)
+	}
+	for _, finding := range ScanReceivers(fakeModule(t, map[string]string{"service.go": src})) {
+		if finding.SmellID == "G1" && finding.Severity != audit.SevHigh {
+			t.Fatalf("expected direct heuristic breadth to remain HIGH, got %+v", finding)
+		}
 	}
 }
 
@@ -60,7 +99,7 @@ func TestG1_RawSizeAndOtherBucketDoNotBecomeCritical(t *testing.T) {
 	src := "package foo\n\ntype Service struct{}\n"
 	for i := 0; i < 10; i++ {
 		src += fmt.Sprintf("func (*Service) Get%d() {}\n", i)
-		src += fmt.Sprintf("func (*Service) Delete%d() {}\n", i)
+		src += fmt.Sprintf("func (*Service) Validate%d() {}\n", i)
 		src += fmt.Sprintf("func (*Service) Custom%d() {}\n", i)
 	}
 	findings := ScanReceivers(fakeModule(t, map[string]string{"service.go": src}))
@@ -92,10 +131,10 @@ type Outer struct{ *inner }
 
 `
 	for _, m := range []string{
-		"CreateA", "CreateB", "CreateC", "CreateD",
-		"GetA", "GetB", "GetC", "GetD",
-		"UpdateA", "UpdateB", "UpdateC",
-		"DeleteA", "DeleteB", "DeleteC", "DeleteD",
+		"CreateA", "CreateB", "GetA", "GetB",
+		"RunA", "RunB", "RunC", "RunD",
+		"ValidateA", "ValidateB", "ValidateC", "ValidateD",
+		"ConnectA", "ConnectB", "ConnectC",
 	} {
 		src += "func (i *inner) " + m + "() {}\n"
 	}
@@ -350,7 +389,7 @@ type MockHolder struct { A *Sub1; B *Sub2; C *Sub3; D *Sub4; E *Sub5 }
 
 func TestG1_PromoterTieIsDeterministic(t *testing.T) {
 	src := "package foo\n\ntype alpha struct{}\ntype beta struct{}\ntype Outer struct { *alpha; *beta }\n"
-	methods := []string{"CreateA", "CreateB", "GetA", "GetB", "UpdateA", "UpdateB", "DeleteA", "DeleteB"}
+	methods := []string{"CreateA", "CreateB", "RunA", "RunB", "ValidateA", "ValidateB", "ConnectA", "ConnectB"}
 	for _, receiver := range []string{"alpha", "beta"} {
 		for _, method := range methods {
 			src += "func (*" + receiver + ") " + method + receiver + "() {}\n"
