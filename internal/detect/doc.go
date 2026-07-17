@@ -14,14 +14,16 @@
 //   - G2  — Stutter Names
 //   - G3  — Build-Tag Pair Sprawl
 //   - G4  — God Dependency Bag
-//   - G5  — Mixed-Concern File
+//   - G5  — Disconnected File Concerns
 //   - G6  — Facade Method
 //   - G7  — Init Coupling
 //   - G8  — Internal Re-Export Tunnel
 //   - G9  — Prefix Cluster
 //   - G10 — Shadow Suffix
-//   - G11 — Junk Drawer
+//   - G11 — Generic Filename
 //   - G12 — Premature Package
+//   - G13 — Large Cohesive File
+//   - G14 — Cross-Layer Orchestration
 //
 // # Output contract
 //
@@ -36,6 +38,6 @@
 // each detector exposing a Scan*() entry point. Cross-detector
 // helpers live in support.go and concerns.go. The cobra subcommand
 // factories — AuditCmd, MonolithsCmd, StutterCmd, FacadesCmd,
-// DepsCmd, MixedCmd, FSCmd, InitsCmd, TunnelCmd — are defined in
+// DepsCmd, MixedCmd, FSCmd, InitsCmd, TunnelCmd, LayersCmd — are defined in
 // cmd.go and wired up by cmd/lagotto/main.go.
 package detect

@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-07-16
+
+### Added
+
+- G14 Cross-Layer Orchestration adds opt-in, repository-owned layer policies
+  that identify boundary methods coordinating multiple configured services or
+  stores while mapping configured generated types.
+- `.lagotto.yaml` provides durable suppressions and detector thresholds;
+  reports now record the Lagotto version and fully resolved configuration.
+- G13 Large Cohesive File preserves a LOW navigation and architecture-review
+  signal for very large files that the stricter cohesion detector correctly
+  leaves alone.
+
+### Changed
+
+- G5 now measures disconnected declaration-reference clusters instead of
+  declaration categories, recognizes cohesive interface families, and reports
+  actionable component members and source ranges.
+- Cyclomatic complexity is applied only after structural candidate selection:
+  it filters trivial single-callable islands and ranks
+  `prioritization_hotspots`, but never creates findings by itself.
+- Receiver findings use cross-package coupling evidence for severity. Prefix
+  clusters and foreign-holder findings are calibrated lower, and single-file
+  packages are consolidated into one repository-pattern observation.
+- G11 generic-filename findings now consider declaration and file size, so a
+  one-function `helpers.go` is treated as a naming nit rather than evidence of
+  mixed responsibilities.
+
+### Fixed
+
+- G13 evidence now reports actual substantial and ignored graph-component
+  counts.
+- G14 ignores constructor wiring and avoids double-counting a package helper
+  alongside a receiver call from the same dependency package.
+
 ## [0.2.1] - 2026-07-16
 
 ### Changed
@@ -141,7 +176,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Goreleaser configuration with multi-arch darwin/linux builds and
   Homebrew tap publish.
 
-[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/CaliLuke/lagotto/compare/v0.2.3...v0.2.4
 [0.2.1]: https://github.com/CaliLuke/lagotto/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/CaliLuke/lagotto/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/CaliLuke/lagotto/releases/tag/v0.1.2

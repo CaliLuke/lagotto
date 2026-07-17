@@ -67,7 +67,7 @@ func emitText(w io.Writer, r *Report) error {
 	p := func(format string, a ...any) {
 		_, _ = fmt.Fprintf(bw, format, a...)
 	}
-	p("Lagotto audit — %s\n", r.Root)
+	p("Lagotto %s audit — %s\n", r.Version, r.Root)
 	if len(r.Tags) > 0 {
 		p("Build tags: %s\n", strings.Join(r.Tags, ","))
 	}

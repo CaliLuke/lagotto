@@ -59,9 +59,9 @@ listing without opening it.
 ## How to fix it
 
 Read the file's contents and rename it after the actual concept
-inside. If multiple concepts coexist in one file, that's also a
-[G5 Mixed-Concern File](g5-mixed-concern-file.md) — split first,
-then name each split.
+inside. If the file is also 600+ lines, use the
+[G5 Disconnected File Concerns](g5-mixed-concern-file.md) signal to decide whether
+independently changing sections justify a split before naming each result.
 
 ```text
 auth/
@@ -73,7 +73,7 @@ auth/
 
 ## Related
 
-- [G5 Mixed-Concern File](g5-mixed-concern-file.md): a shadow-suffix
-  file is often also mixed-concern.
-- [G11 Junk Drawer](g11-junk-drawer.md): the standalone version of
+- [G5 Disconnected File Concerns](g5-mixed-concern-file.md): large shadow-suffix
+  files may also deserve a navigation and cohesion review.
+- [G11 Generic Filename](g11-junk-drawer.md): the standalone version of
   the same anti-pattern (`helpers.go` instead of `something_helpers.go`).

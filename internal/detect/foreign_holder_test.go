@@ -1,6 +1,10 @@
 package detect
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/CaliLuke/lagotto/internal/audit"
+)
 
 func foreignHolderFixture() map[string]string {
 	return map[string]string{
@@ -35,6 +39,11 @@ func Handle(s *store.Store) {}
 	findings := ScanReceivers(fakeModule(t, files))
 	if !containsID(findings, "G1E") {
 		t.Fatalf("expected G1E, got %v", findingIDs(findings))
+	}
+	for _, finding := range findings {
+		if finding.SmellID == "G1E" && finding.Severity != audit.SevMedium {
+			t.Fatalf("expected G1E architectural evidence to be MEDIUM, got %+v", finding)
+		}
 	}
 }
 

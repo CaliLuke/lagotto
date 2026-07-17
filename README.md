@@ -53,6 +53,12 @@ lagotto audit --fail-on=medium ./internal
 
 # Suppress one accepted finding by its stable smell ID and location
 lagotto audit --suppress=G5@cmd/server/cli_perf.go .
+
+# Tune G5 for a one-off review
+lagotto mixed --min-lines=800 --min-component-members=3 --min-single-component-complexity=7 --severity=low .
+
+# Run only repository-defined cross-layer orchestration policies
+lagotto layers .
 ```
 
 JSON output is the default contract for tooling. Each finding has
@@ -74,6 +80,58 @@ globally or `SMELL_ID@LOCATION` to suppress only findings whose stable
 location starts with that value. JSON reports include
 `suppressed_findings` when any matches were removed.
 
+### Repository configuration
+
+Lagotto automatically loads `.lagotto.yaml` from the audit root. Check it into
+the repository to make accepted findings and detector policy durable and
+reviewable:
+
+```yaml
+version: 1
+
+suppress:
+  - G5@tqlgen/parser.go
+
+mixed:
+  min_lines: 600
+  min_component_members: 2
+  min_component_lines: 40
+  min_single_component_complexity: 5
+  severity: medium
+  cohesive_min_lines: 1200
+
+layer_policy:
+  - name: thin-transport
+    paths:
+      - internal/transport/**
+    dependencies:
+      - internal/service/**
+      - internal/storage/**
+    generated_types:
+      - gen/**
+    max_coordinated_dependencies: 1
+    severity: medium
+```
+
+The `mixed` settings apply to both `lagotto audit` and `lagotto mixed`.
+One-off `mixed` flags override the config values. Use `--config=path/to/file`
+to load an explicit file instead; unknown keys and invalid thresholds fail
+before packages are loaded. A one-callable component that qualifies only by
+the 40-line rule must also meet cyclomatic complexity 5; set
+`min_single_component_complexity: 0` to disable that post-candidate check. Set
+`cohesive_min_lines: 0` to disable G13. JSON
+output includes the exact Lagotto `version`, loaded config path, and fully
+resolved `configuration` (defaults plus repository and CLI overrides).
+Complexity values and `prioritization_hotspots` rank already-structural
+candidates; complexity never creates a finding by itself.
+
+`layer_policy` enables the opt-in G14 detector. A scoped function or method is
+reported only when it both calls more than the configured number of distinct
+dependency receiver types (or dependency package-function groups) and maps a
+configured generated type. Patterns accept module-relative or full import
+paths with `*`, `**`, and `?`. G14 does not enforce import allow/deny rules;
+keep strict dependency boundaries in a tool such as depguard.
+
 ## Smell catalog
 
 | ID  | Smell                     | What it catches                                                                              |
@@ -86,14 +144,16 @@ location starts with that value. JSON reports include
 | G2  | Stutter Names             | Exported type/function repeats the package name (`lanes.LaneConfig`)                         |
 | G3  | Build-Tag Pair Sprawl     | ≥3 paired files conditioned by build tags (`*_stub.go` / `*_cgo.go`) in one dir              |
 | G4  | God Dependency Bag        | A `Deps`/`Container` has ≥8 fields drawn from ≥5 distinct external packages                  |
-| G5  | Mixed-Concern File        | A single file holds 3+ unrelated decl groups (types + validation + utilities)                |
+| G5  | Disconnected File Concerns | A 600+ line file contains 2+ substantial disconnected declaration-reference clusters       |
 | G6  | Facade Method             | A method whose body is a thin pass-through (≤3 lines) to a function in another package       |
 | G7  | Init Coupling             | Multiple `func init()` in a package with cross-file ordering dependencies                    |
 | G8  | Internal Re-Export Tunnel | ≥50% of a package's exported declarations re-export from a dominant deeper package           |
 | G9  | Prefix Cluster            | 3+ files share a ≥2-character name prefix in a flat directory                                |
 | G10 | Shadow Suffix             | File names ending in `_helpers`, `_utils`, `_handlers`, `_actions`, `_responses`             |
-| G11 | Junk Drawer               | File named `helpers.go` / `utils.go` / `common.go` / `misc.go` with mixed contents           |
+| G11 | Generic Filename          | Generic filename weighted by its top-level declaration count and physical line count         |
 | G12 | Premature Package         | A directory containing only 1 source file (excluding tests, doc, generated)                  |
+| G13 | Large Cohesive File       | A 1200+ line cohesive file worth a LOW navigation or layer-policy review                     |
+| G14 | Cross-Layer Orchestration | A configured layer coordinates too many services/stores while mapping generated boundary types |
 
 ## The headline detector: Receiver Monolith and its disguises
 
@@ -182,6 +242,7 @@ cosmetic if downstream functions and structs still accept the broad holder and
 reach through it. G1E identifies holders with at least three subpackage service
 fields or accessors, then reports production signatures in other packages that
 still mention `*Holder`. Constructors and test-fixture packages are exempt.
+G1E is MEDIUM: it is concrete architectural evidence, not a correctness risk.
 
 ### Embedding theatre
 
@@ -230,17 +291,21 @@ batches to keep peak memory proportional to a slice of the module.
 - **CRITICAL** — Receiver Monolith with a large method set dominated by
   same-package embedding (structural decomposition-theatre evidence); Aggregate
   Holder with ≥50 pointee methods or ≥7 sub-services; Decomposition
-  Theatre ≥6 aliases; Foreign Holder in ≥5 signatures across ≥3 packages;
+  Theatre ≥6 aliases;
   God Dependency Bag ≥12 fields.
-- **HIGH** — Receiver Monolith ≥15 methods across ≥3 non-fluent concerns;
+- **HIGH** — Receiver Monolith with at least three cross-package operational
+  API sites, or an operational concrete-type escape plus at least four total
+  operational/state sites; stored DI fields alone remain MEDIUM;
   Aggregate Holder 5–6
   sub-services with ≥25 pointee methods; Decomposition Theatre 3–5
-  aliases; any Foreign Holder escape; Mixed-Concern File ≥600 lines;
+  aliases;
   God Dependency Bag 8–11 fields.
-- **MEDIUM** — Stutter Names; Build-Tag Pair Sprawl; Mixed-Concern File
-  200–599 lines; Prefix Cluster of 4+ files; Internal Re-Export Tunnel.
-- **LOW** — Premature Package; Shadow Suffix; Init Coupling; Junk
-  Drawer <100 lines.
+- **MEDIUM** — Receiver Monolith without demonstrated cross-package coupling;
+  Foreign Holder; Stutter Names; Build-Tag Pair Sprawl; Disconnected File
+  Concerns; Internal Re-Export Tunnel; a generic filename with ≥10 declarations
+  over ≥200 lines; Cross-Layer Orchestration by default (repository-configurable).
+- **LOW** — Prefix Cluster; Premature Package; Large Cohesive File; Shadow
+  Suffix; Init Coupling; Generic Filename.
 
 ## What lagotto does NOT flag
 

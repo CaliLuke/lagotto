@@ -3,7 +3,10 @@ package detect
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/CaliLuke/lagotto/internal/audit"
 )
 
 // fakeDir writes a flat directory of files (basename → content) and
@@ -38,6 +41,11 @@ func TestG9_PrefixCluster(t *testing.T) {
 	findings := prefixClusterFindings(dir, files)
 	if !containsID(findings, "G9") {
 		t.Fatalf("expected G9, got %v", findingIDs(findings))
+	}
+	for _, finding := range findings {
+		if finding.SmellID == "G9" && finding.Severity != audit.SevLow {
+			t.Fatalf("prefix shape alone should remain LOW, got %+v", finding)
+		}
 	}
 	_ = dir
 }
@@ -97,6 +105,32 @@ func TestG11_RealNames_NoFire(t *testing.T) {
 	findings := junkDrawerFindings("/tmp/fake", []string{"router.go", "session.go"})
 	if containsID(findings, "G11") {
 		t.Fatalf("did not expect G11, got %+v", findings)
+	}
+}
+
+func TestG11_RecommendsRenameWithoutAssumingSplit(t *testing.T) {
+	findings := junkDrawerFindings("driver", []string{"helpers.go"}, map[string]sourceFileStats{
+		"helpers.go": {DeclarationCount: 1, LineCount: 17},
+	})
+	if len(findings) != 1 {
+		t.Fatalf("expected one G11 finding, got %+v", findings)
+	}
+	if findings[0].Smell != "Generic Filename" ||
+		!strings.Contains(findings[0].Suggestion, "Rename") ||
+		!strings.Contains(findings[0].Suggestion, "Split only") ||
+		!strings.Contains(findings[0].Message, "1 top-level declaration(s) over 17 lines") ||
+		findings[0].Severity != "LOW" {
+		t.Fatalf("expected rename-first guidance without assumed decomposition, got %+v", findings[0])
+	}
+}
+
+func TestG11_LargeGenericFileShowsAccumulationRisk(t *testing.T) {
+	findings := junkDrawerFindings("driver", []string{"helpers.go"}, map[string]sourceFileStats{
+		"helpers.go": {DeclarationCount: 20, LineCount: 500},
+	})
+	if len(findings) != 1 || findings[0].Severity != "MEDIUM" ||
+		!strings.Contains(findings[0].Message, "accumulation risk") {
+		t.Fatalf("expected a content-weighted accumulation warning, got %+v", findings)
 	}
 }
 

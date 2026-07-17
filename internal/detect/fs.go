@@ -30,7 +30,7 @@ func ScanFS(root string, pkgs []*packages.Package, exclude []string) []audit.Fin
 		location := filesystemLocation(root, d)
 		findings = append(findings, prefixClusterFindings(location, files)...)
 		findings = append(findings, shadowSuffixFindings(location, files)...)
-		findings = append(findings, junkDrawerFindings(location, files)...)
+		findings = append(findings, junkDrawerFindings(location, files, contents.fileStats)...)
 		findings = append(findings, prematurePackageFindings(root, d, location, contents)...)
 		findings = append(findings, buildTagPairFindings(location, contents)...)
 	}
@@ -45,6 +45,12 @@ type packageDirContents struct {
 	packageName    string
 	buildTagged    map[string]bool
 	importsTesting bool
+	fileStats      map[string]sourceFileStats
+}
+
+type sourceFileStats struct {
+	DeclarationCount int `json:"declaration_count"`
+	LineCount        int `json:"line_count"`
 }
 
 func collectPackageDirs(root string, pkgs []*packages.Package, exclude []string) map[string]packageDirContents {
@@ -64,7 +70,7 @@ func collectPackageDirs(root string, pkgs []*packages.Package, exclude []string)
 			return nil
 		}
 		fset := token.NewFileSet()
-		file, parseErr := parser.ParseFile(fset, path, nil, parser.ImportsOnly|parser.ParseComments)
+		file, parseErr := parser.ParseFile(fset, path, nil, parser.ParseComments)
 		if parseErr != nil || file == nil || ast.IsGenerated(file) {
 			return nil
 		}
@@ -87,6 +93,10 @@ func collectPackageDirs(root string, pkgs []*packages.Package, exclude []string)
 		if contents.buildTagged == nil {
 			contents.buildTagged = map[string]bool{}
 		}
+		if contents.fileStats == nil {
+			contents.fileStats = map[string]sourceFileStats{}
+		}
+		contents.fileStats[base] = sourceFileStatistics(fset, file)
 		contents.buildTagged[base] = hasBuildConstraint(file)
 		out[dir] = contents
 		return nil
@@ -96,6 +106,24 @@ func collectPackageDirs(root string, pkgs []*packages.Package, exclude []string)
 		out[dir] = contents
 	}
 	return out
+}
+
+func sourceFileStatistics(fset *token.FileSet, file *ast.File) sourceFileStats {
+	stats := sourceFileStats{LineCount: physicalLineCount(fset, file)}
+	for _, declaration := range file.Decls {
+		switch decl := declaration.(type) {
+		case *ast.FuncDecl:
+			stats.DeclarationCount++
+		case *ast.GenDecl:
+			if decl.Tok == token.IMPORT {
+				continue
+			}
+			for range decl.Specs {
+				stats.DeclarationCount++
+			}
+		}
+	}
+	return stats
 }
 
 func hasBuildConstraint(file *ast.File) bool {
@@ -142,14 +170,10 @@ func prefixClusterFindings(dir string, files []string) []audit.Finding {
 		if len(c.files) < 3 {
 			continue
 		}
-		sev := audit.SevLow
-		if len(c.files) >= 4 {
-			sev = audit.SevMedium
-		}
 		findings = append(findings, audit.Finding{
 			Smell:    "Prefix Cluster",
 			SmellID:  "G9",
-			Severity: sev,
+			Severity: audit.SevLow,
 			Location: dir,
 			Message: fmt.Sprintf("%d files share prefix %q in %s.",
 				len(c.files), prefix, dir),
@@ -158,7 +182,7 @@ func prefixClusterFindings(dir string, files []string) []audit.Finding {
 				"files":  c.files,
 				"dir":    dir,
 			},
-			Suggestion: "Promote the cluster to a subpackage if the files share a domain concern. Otherwise rename to remove the artificial common prefix.",
+			Suggestion: "A shared prefix may be healthy organization. Promote the cluster to a subpackage only if it forms an independently changing component with a useful boundary; otherwise keep it or rename files when clearer content names exist.",
 		})
 	}
 	return findings
@@ -227,9 +251,9 @@ var junkDrawerNames = map[string]bool{
 }
 
 // junkDrawerFindings flags G11 — files with reserved generic names
-// (`helpers.go`, `utils.go`, `common.go`, etc.) that signal the file
-// is a catch-all rather than a coherent unit.
-func junkDrawerFindings(dir string, files []string) []audit.Finding {
+// (`helpers.go`, `utils.go`, `common.go`, etc.) that obscure their content.
+// The filename alone does not establish that the file contains mixed concerns.
+func junkDrawerFindings(dir string, files []string, statsByFile ...map[string]sourceFileStats) []audit.Finding {
 	var hits []string
 	for _, f := range files {
 		if junkDrawerNames[f] {
@@ -239,17 +263,53 @@ func junkDrawerFindings(dir string, files []string) []audit.Finding {
 	if len(hits) == 0 {
 		return nil
 	}
+	stats := map[string]sourceFileStats{}
+	if len(statsByFile) > 0 && statsByFile[0] != nil {
+		stats = statsByFile[0]
+	}
+	type fileEvidence struct {
+		File             string `json:"file"`
+		DeclarationCount int    `json:"declaration_count"`
+		LineCount        int    `json:"line_count"`
+		Classification   string `json:"classification"`
+	}
+	evidenceFiles := make([]fileEvidence, 0, len(hits))
+	accumulationRisk := false
+	for _, file := range hits {
+		fileStats := stats[file]
+		classification := "naming_nit"
+		if fileStats.DeclarationCount >= 10 && fileStats.LineCount >= 200 {
+			classification = "accumulation_risk"
+			accumulationRisk = true
+		}
+		evidenceFiles = append(evidenceFiles, fileEvidence{
+			File: file, DeclarationCount: fileStats.DeclarationCount,
+			LineCount: fileStats.LineCount, Classification: classification,
+		})
+	}
+	severity := audit.SevLow
+	message := fmt.Sprintf("%d generic filename(s) do not describe their content; inspect the declaration and line counts before deciding whether anything beyond a rename is warranted.", len(hits))
+	if len(hits) == 1 && len(stats) > 0 {
+		fileStats := stats[hits[0]]
+		message = fmt.Sprintf("%s is a generic filename with %d top-level declaration(s) over %d lines.", hits[0], fileStats.DeclarationCount, fileStats.LineCount)
+	}
+	if accumulationRisk {
+		severity = audit.SevMedium
+		message += " At least one file is large enough to show accumulation risk."
+	} else {
+		message += " This is a naming signal, not evidence of mixed concerns."
+	}
 	return []audit.Finding{{
-		Smell:    "Junk Drawer",
+		Smell:    "Generic Filename",
 		SmellID:  "G11",
-		Severity: audit.SevLow,
+		Severity: severity,
 		Location: dir,
-		Message:  "Directory contains a generically-named catch-all file.",
+		Message:  message,
 		Evidence: map[string]any{
-			"files": hits,
+			"files": evidenceFiles,
 			"dir":   dir,
 		},
-		Suggestion: "Read the contents and split by actual concern. A file named after where it sits ('helpers') instead of what it contains is a structural smell.",
+		Suggestion: "Rename each file after its specific content (for example, error.go for error conversion). Split only if the file actually contains independently changing concerns; a single cohesive helper needs only a rename.",
 	}}
 }
 

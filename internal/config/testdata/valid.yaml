@@ -1,0 +1,17 @@
+version: 1
+suppress:
+  - G5@tqlgen/parser.go
+mixed:
+  min_lines: 600
+  min_component_members: 2
+  min_component_lines: 40
+  min_single_component_complexity: 5
+  severity: medium
+  cohesive_min_lines: 1400
+layer_policy:
+  - name: thin-transport
+    paths: [internal/transport/**]
+    dependencies: [internal/service/**, internal/storage/**]
+    generated_types: [gen/**]
+    max_coordinated_dependencies: 1
+    severity: medium
