@@ -9,7 +9,7 @@ import (
 // Validate rejects unsupported versions, invalid suppressions, thresholds,
 // and severity names before package loading begins.
 func Validate(cfg Config) error {
-	if cfg.Version != 0 && cfg.Version != 1 {
+	if cfg.Version != 1 {
 		return fmt.Errorf("unsupported version %d (supported: 1)", cfg.Version)
 	}
 	if err := audit.ValidateSuppressions(cfg.Suppress); err != nil {

@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -63,6 +64,25 @@ func NewRange(min, max int) Filter { return Range{Min: min, Max: max} }
 `)
 	if findings := ScanMixedConcern(fakeModule(t, map[string]string{"filter.go": body})); containsID(findings, "G5") {
 		t.Fatalf("did not expect an interface implementation family to be split, got %+v", findings)
+	}
+}
+
+func TestG5_SubstantialImplicitInterfaceFamilyIncludesDeclaration(t *testing.T) {
+	body := "package foo\n\ntype Worker interface {\n"
+	for i := 0; i < 40; i++ {
+		body += fmt.Sprintf("\tTask%d()\n", i)
+	}
+	body += "}\n\ntype Alpha struct{}\n"
+	for i := 0; i < 40; i++ {
+		body += fmt.Sprintf("func (Alpha) Task%d() {}\n", i)
+	}
+	body += "\ntype Beta struct{}\n"
+	for i := 0; i < 40; i++ {
+		body += fmt.Sprintf("func (Beta) Task%d() {}\n", i)
+	}
+	body = largeSource(body)
+	if findings := ScanMixedConcern(fakeModule(t, map[string]string{"worker.go": body})); containsID(findings, "G5") {
+		t.Fatalf("named interface declaration and implicit implementations should be one family, got %+v", findings)
 	}
 }
 
@@ -326,6 +346,24 @@ var second = 2
 	}
 	if findings[0].Evidence["component_count"] != 3 || findings[0].Evidence["ignored_component_count"] != 2 || findings[0].Evidence["minor_component_count"] != 0 {
 		t.Fatalf("expected every graph component to be accounted for, got %#v", findings[0].Evidence)
+	}
+}
+
+func TestG13_AllowsMinorDisconnectedHelpersByDesign(t *testing.T) {
+	body := `package foo
+
+func FirstHelper() {}
+func SecondHelper() {}
+`
+	for i := 0; i < 1210; i++ {
+		body += "// navigation padding\n"
+	}
+	findings := ScanMixedConcern(fakeModule(t, map[string]string{"helpers.go": body}))
+	if len(findings) != 1 || findings[0].SmellID != "G13" {
+		t.Fatalf("minor disconnected helpers should not erase the LOW size signal, got %+v", findings)
+	}
+	if findings[0].Evidence["substantial_component_count"] != 0 || findings[0].Evidence["minor_component_count"] != 2 {
+		t.Fatalf("expected zero substantial and two intentionally tolerated minor components, got %#v", findings[0].Evidence)
 	}
 }
 

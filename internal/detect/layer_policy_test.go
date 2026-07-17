@@ -301,6 +301,8 @@ func TestPolicyPatternMatching(t *testing.T) {
 	}{
 		{"internal/transport/**", "github.com/acme/app/internal/transport", "github.com/acme/app"},
 		{"internal/transport/**", "github.com/acme/app/internal/transport/http/handler.go", "github.com/acme/app"},
+		{"internal/**/handler.go", "github.com/acme/app/internal/handler.go", "github.com/acme/app"},
+		{"internal/**/handler.go", "github.com/acme/app/internal/http/handler.go", "github.com/acme/app"},
 		{"github.com/acme/shared/*", "github.com/acme/shared/store", "github.com/acme/app"},
 	} {
 		if !matchesPolicyPatterns([]string{test.pattern}, test.value, test.module) {

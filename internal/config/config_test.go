@@ -60,14 +60,18 @@ func TestLoadExplicitMissingConfigFails(t *testing.T) {
 
 func TestLoadRejectsUnknownAndInvalidPolicy(t *testing.T) {
 	for name, body := range map[string]string{
-		"unknown":        "version: 1\nmixt: {}\n",
-		"threshold":      "version: 1\nmixed:\n  min_lines: 0\n",
-		"cohesive":       "version: 1\nmixed:\n  cohesive_min_lines: -1\n",
-		"complexity":     "version: 1\nmixed:\n  min_single_component_complexity: -1\n",
-		"suppress":       "version: 1\nsuppress: ['bad selector']\n",
-		"layer fields":   "version: 1\nlayer_policy:\n  - name: thin\n    paths: [internal/**]\n",
-		"layer max":      "version: 1\nlayer_policy:\n  - name: thin\n    paths: [internal/**]\n    dependencies: [service/**]\n    generated_types: [gen/**]\n    max_coordinated_dependencies: -1\n",
-		"layer severity": "version: 1\nlayer_policy:\n  - name: thin\n    paths: [internal/**]\n    dependencies: [service/**]\n    generated_types: [gen/**]\n    severity: urgent\n",
+		"empty":           "",
+		"missing version": "mixed:\n  min_lines: 600\n",
+		"version zero":    "version: 0\n",
+		"future version":  "version: 2\n",
+		"unknown":         "version: 1\nmixt: {}\n",
+		"threshold":       "version: 1\nmixed:\n  min_lines: 0\n",
+		"cohesive":        "version: 1\nmixed:\n  cohesive_min_lines: -1\n",
+		"complexity":      "version: 1\nmixed:\n  min_single_component_complexity: -1\n",
+		"suppress":        "version: 1\nsuppress: ['bad selector']\n",
+		"layer fields":    "version: 1\nlayer_policy:\n  - name: thin\n    paths: [internal/**]\n",
+		"layer max":       "version: 1\nlayer_policy:\n  - name: thin\n    paths: [internal/**]\n    dependencies: [service/**]\n    generated_types: [gen/**]\n    max_coordinated_dependencies: -1\n",
+		"layer severity":  "version: 1\nlayer_policy:\n  - name: thin\n    paths: [internal/**]\n    dependencies: [service/**]\n    generated_types: [gen/**]\n    severity: urgent\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := writeConfig(t, body)

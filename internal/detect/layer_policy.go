@@ -449,8 +449,13 @@ func globPolicyRegexp(pattern string) string {
 		switch pattern[index] {
 		case '*':
 			if index+1 < len(pattern) && pattern[index+1] == '*' {
-				expression.WriteString(".*")
-				index++
+				if index+2 < len(pattern) && pattern[index+2] == '/' {
+					expression.WriteString("(?:.*/)?")
+					index += 2
+				} else {
+					expression.WriteString(".*")
+					index++
+				}
 			} else {
 				expression.WriteString("[^/]*")
 			}

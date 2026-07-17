@@ -63,18 +63,18 @@ func Load(root, explicit string) (Config, string, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(contents))
 	decoder.KnownFields(true)
 	var cfg Config
-	if err := decoder.Decode(&cfg); err != nil {
-		if errors.Is(err, io.EOF) {
-			return Config{}, path, nil
-		}
-		return Config{}, "", fmt.Errorf("parse Lagotto config %q: %w", path, err)
+	decodeErr := decoder.Decode(&cfg)
+	if decodeErr != nil && !errors.Is(decodeErr, io.EOF) {
+		return Config{}, "", fmt.Errorf("parse Lagotto config %q: %w", path, decodeErr)
 	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return Config{}, "", fmt.Errorf("parse Lagotto config %q: multiple YAML documents are not supported", path)
+	if decodeErr == nil {
+		var extra any
+		if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+			if err == nil {
+				return Config{}, "", fmt.Errorf("parse Lagotto config %q: multiple YAML documents are not supported", path)
+			}
+			return Config{}, "", fmt.Errorf("parse Lagotto config %q: %w", path, err)
 		}
-		return Config{}, "", fmt.Errorf("parse Lagotto config %q: %w", path, err)
 	}
 	if err := Validate(cfg); err != nil {
 		return Config{}, "", fmt.Errorf("invalid Lagotto config %q: %w", path, err)
