@@ -65,10 +65,17 @@ func TestG1_DirectBreadthAloneIsNotCritical(t *testing.T) {
 		src += fmt.Sprintf("func (*Service) Connect%d() {}\n", i)
 		src += fmt.Sprintf("func (*Service) Export%d() {}\n", i)
 	}
+	found := false
 	for _, finding := range ScanReceivers(fakeModule(t, map[string]string{"service.go": src})) {
-		if finding.SmellID == "G1" && finding.Severity != audit.SevMedium {
-			t.Fatalf("expected uncoupled heuristic breadth to be MEDIUM, got %+v", finding)
+		if finding.SmellID == "G1" {
+			found = true
+			if finding.Severity != audit.SevMedium {
+				t.Fatalf("expected uncoupled heuristic breadth to be MEDIUM, got %+v", finding)
+			}
 		}
+	}
+	if !found {
+		t.Fatal("expected a G1 finding at MEDIUM severity")
 	}
 }
 

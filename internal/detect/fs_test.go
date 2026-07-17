@@ -119,7 +119,7 @@ func TestG11_RecommendsRenameWithoutAssumingSplit(t *testing.T) {
 		!strings.Contains(findings[0].Suggestion, "Rename") ||
 		!strings.Contains(findings[0].Suggestion, "Split only") ||
 		!strings.Contains(findings[0].Message, "1 top-level declaration(s) over 17 lines") ||
-		findings[0].Severity != "LOW" {
+		findings[0].Severity != audit.SevLow {
 		t.Fatalf("expected rename-first guidance without assumed decomposition, got %+v", findings[0])
 	}
 }
@@ -128,7 +128,7 @@ func TestG11_LargeGenericFileShowsAccumulationRisk(t *testing.T) {
 	findings := junkDrawerFindings("driver", []string{"helpers.go"}, map[string]sourceFileStats{
 		"helpers.go": {DeclarationCount: 20, LineCount: 500},
 	})
-	if len(findings) != 1 || findings[0].Severity != "MEDIUM" ||
+	if len(findings) != 1 || findings[0].Severity != audit.SevMedium ||
 		!strings.Contains(findings[0].Message, "accumulation risk") {
 		t.Fatalf("expected a content-weighted accumulation warning, got %+v", findings)
 	}

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-07-16
+
+### Fixed
+
+- Repository configuration now requires the declared `version: 1`; empty,
+  omitted, zero, and unsupported future versions fail before package loading.
+- Interior `**/` layer-policy globs match zero or more path segments, so a
+  pattern such as `internal/**/handler.go` covers both
+  `internal/handler.go` and deeper handlers.
+
+### Changed
+
+- Tests now require the expected G1 finding, use severity constants, and lock
+  in the intended implicit-interface and minor-component cohesion behavior.
+- G13 documentation clarifies that complexity-rejected components are a subset
+  of the reported minor components.
+
 ## [0.2.4] - 2026-07-16
 
 ### Added
@@ -176,7 +193,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Goreleaser configuration with multi-arch darwin/linux builds and
   Homebrew tap publish.
 
-[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/CaliLuke/lagotto/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/CaliLuke/lagotto/compare/v0.2.3...v0.2.4
 [0.2.1]: https://github.com/CaliLuke/lagotto/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/CaliLuke/lagotto/compare/v0.1.2...v0.2.0

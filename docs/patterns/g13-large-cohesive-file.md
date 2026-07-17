@@ -20,7 +20,9 @@ two substantial disconnected components.
 The message reports the actual substantial-component count (zero or one).
 Evidence reports zero-primary graph artifacts as `ignored_component_count`, so
 the substantial, minor, and ignored categories account for the raw
-`component_count`.
+`component_count`. `complexity_rejected_component_count` identifies the subset
+of minor components rejected by the post-candidate complexity gate; it is not a
+fourth disjoint category.
 
 Because G13 is already a size/cohesion candidate, Lagotto also reports its
 total and maximum cyclomatic complexity and the five highest-complexity named
