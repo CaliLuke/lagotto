@@ -59,6 +59,9 @@ lagotto mixed --min-lines=800 --min-component-members=3 --min-single-component-c
 
 # Run only repository-defined cross-layer orchestration policies
 lagotto layers .
+
+# Review materialized raw-result pipelines
+lagotto results .
 ```
 
 JSON output is the default contract for tooling. Each finding has
@@ -154,6 +157,7 @@ keep strict dependency boundaries in a tool such as depguard.
 | G12 | Premature Package         | A one-source-file package without shared-test or repeated production reuse                   |
 | G13 | Large Cohesive File       | A 1200+ line cohesive file worth a LOW navigation or layer-policy review                     |
 | G14 | Cross-Layer Orchestration | A configured layer coordinates too many services/stores while mapping generated boundary types |
+| G15 | Materialized Result Pipeline | A complete `[]map[string]any` result set is transformed into a second typed slice             |
 
 ## The headline detector: Receiver Monolith and its disguises
 

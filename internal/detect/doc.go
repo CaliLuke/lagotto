@@ -24,6 +24,7 @@
 //   - G12 — Premature Package
 //   - G13 — Large Cohesive File
 //   - G14 — Cross-Layer Orchestration
+//   - G15 — Materialized Result Pipeline
 //
 // # Output contract
 //
@@ -38,6 +39,6 @@
 // each detector exposing a Scan*() entry point. Cross-detector
 // helpers live in support.go and concerns.go. The cobra subcommand
 // factories — AuditCmd, MonolithsCmd, StutterCmd, FacadesCmd,
-// DepsCmd, MixedCmd, FSCmd, InitsCmd, TunnelCmd, LayersCmd — are defined in
+// DepsCmd, MixedCmd, FSCmd, InitsCmd, TunnelCmd, LayersCmd, ResultsCmd — are defined in
 // cmd.go and wired up by cmd/lagotto/main.go.
 package detect

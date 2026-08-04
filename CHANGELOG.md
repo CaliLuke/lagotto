@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-08-04
+
+### Added
+
+- G15 Materialized Result Pipeline identifies functions that transform a fully
+  materialized `[]map[string]any` result set into a second typed slice. The LOW
+  review signal points performance work toward streaming decode and hydration
+  boundaries while leaving scalar setters to separate profiling evidence.
+- `lagotto results` runs G15 independently; `lagotto audit` includes it by
+  default.
+
 ## [0.2.6] - 2026-07-17
 
 ### Fixed
@@ -210,7 +221,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Goreleaser configuration with multi-arch darwin/linux builds and
   Homebrew tap publish.
 
-[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/CaliLuke/lagotto/compare/v0.2.6...v0.2.7
+[0.2.6]: https://github.com/CaliLuke/lagotto/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/CaliLuke/lagotto/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/CaliLuke/lagotto/compare/v0.2.3...v0.2.4
 [0.2.1]: https://github.com/CaliLuke/lagotto/compare/v0.2.0...v0.2.1

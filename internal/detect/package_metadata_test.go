@@ -41,6 +41,7 @@ func TestScannersHandleMismatchedPackageFileMetadata(t *testing.T) {
 		"facades":   ScanFacades,
 		"inits":     ScanInitCoupling,
 		"tunnel":    ScanReExportTunnel,
+		"results":   ScanMaterializedResultPipelines,
 		"receivers": ScanReceivers,
 	}
 	for name, scan := range scanners {

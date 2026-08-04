@@ -72,3 +72,5 @@ Lower-priority polish, but each finding is concrete.
   funcs across files with cross-file ordering surface.
 - [G8 — Internal Re-Export Tunnel](g8-internal-re-export-tunnel.md):
   a package whose exported surface is dominated by a deeper package.
+- [G15 — Materialized Result Pipeline](g15-materialized-result-pipeline.md): a
+  complete generic result set transformed into a second typed collection.

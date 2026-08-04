@@ -87,6 +87,7 @@ not present, fall back to plain prose remediation.
 | G10 | **Shadow Suffix**             | File names ending in `_helpers`, `_utils`, `_handlers`, `_actions`, `_responses`       |
 | G11 | **Junk Drawer**               | File named `helpers.go` / `utils.go` / `common.go` / `misc.go` with mixed contents     |
 | G12 | **Premature Package**         | A directory containing only 1 source file (excluding tests, doc, generated)            |
+| G15 | **Materialized Result Pipeline** | A complete `[]map[string]any` result set is transformed into a second typed slice    |
 
 ## Why Receiver Monolith Is The Most Important Smell
 
@@ -181,6 +182,7 @@ Subcommands:
 - `lagotto mixed` — Mixed-Concern File (G5)
 - `lagotto inits` — Init Coupling (G7)
 - `lagotto tunnel` — Internal Re-Export Tunnel (G8)
+- `lagotto results` — Materialized Result Pipeline (G15)
 - `lagotto fs` — filesystem smells (G3, G9, G10, G11, G12)
 
 For human reading, swap `--format=json` for `--format=text`.

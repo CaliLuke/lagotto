@@ -171,6 +171,7 @@ func runAuditScan(f *Flags, args []string) error {
 		findings = append(findings, ScanInitCoupling(pkgs)...)
 		findings = append(findings, ScanReExportTunnel(pkgs)...)
 		findings = append(findings, ScanLayerPolicy(pkgs, f.LayerPolicy)...)
+		findings = append(findings, ScanMaterializedResultPipelines(pkgs)...)
 	}
 	return emitScanReport(f, root, loadErrs, findings)
 }
@@ -369,6 +370,20 @@ func LayersCmd(f *Flags) *cobra.Command {
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding {
 				return ScanLayerPolicy(pkgs, f.LayerPolicy)
+			})
+		},
+	}
+}
+
+// ResultsCmd returns the `results` subcommand: G15.
+func ResultsCmd(f *Flags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "results [path]",
+		Short: "Find materialized raw-result pipelines that build a second typed slice.",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding {
+				return ScanMaterializedResultPipelines(pkgs)
 			})
 		},
 	}
