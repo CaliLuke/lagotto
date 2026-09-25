@@ -271,3 +271,25 @@ func TestScanFSReadsIgnoredBuildFilesAndFiltersGeneratedDocAndMain(t *testing.T)
 		t.Fatalf("expected only real.go + doc.go to produce G12, got %d in %+v", g12Count, findings)
 	}
 }
+
+// A checkout below a directory named like a default exclusion ("gen",
+// "vendor") must not hide every filesystem finding.
+func TestScanFSIgnoresExcludedSegmentsAboveModuleRoot(t *testing.T) {
+	parent := fakeDir(t, map[string]string{
+		"vendor/proj/go.mod":             "module example.com/proj\ngo 1.21\n",
+		"vendor/proj/main.go":            "package main\n",
+		"vendor/proj/internal/solo/a.go": "package solo\n",
+		"vendor/proj/internal/gen/g.go":  "package gen\n",
+	})
+	root := filepath.Join(parent, "vendor", "proj")
+	findings := ScanFS(root, nil, []string{"gen", "vendor"})
+	var locations []string
+	for _, finding := range findings {
+		if finding.SmellID == "G12" {
+			locations = append(locations, finding.Location)
+		}
+	}
+	if strings.Join(locations, ",") != "internal/solo" {
+		t.Fatalf("G12 locations = %v, want [internal/solo]", locations)
+	}
+}

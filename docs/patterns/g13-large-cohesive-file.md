@@ -41,7 +41,9 @@ mixed:
 ```
 
 Use `lagotto mixed --cohesive-min-lines=N` for a one-off threshold, or set the
-value to `0` to disable G13.
+value to `0` to disable G13. A non-zero value must be at least G5's
+`min_lines`. That way every file above the G13 floor gets exactly one of G5 or
+G13 (proved in `formal/Lagotto/Mixed.lean`).
 
 ## How to respond
 

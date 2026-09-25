@@ -20,8 +20,8 @@ var typesMode = packages.NeedName | packages.NeedCompiledGoFiles |
 	packages.NeedImports | packages.NeedTypes | packages.NeedSyntax | packages.NeedModule
 
 // Load loads all packages under root with the given build tags and
-// returns those whose import paths do not match any path segment in
-// exclude. Excluded packages are filtered here so detectors do not
+// returns those whose module-relative import paths do not match any
+// path segment in exclude. Excluded packages are filtered here so detectors do not
 // have to repeat the check.
 //
 // The second return value collects per-package load errors (syntax
@@ -69,7 +69,7 @@ func load(root, tags string, exclude []string, mode packages.LoadMode, patterns 
 	}
 	out := pkgs[:0]
 	for _, p := range pkgs {
-		if p.PkgPath == "" || ShouldExclude(p.PkgPath, exclude) {
+		if p.PkgPath == "" || ShouldExclude(moduleRelativePath(p), exclude) {
 			continue
 		}
 		out = append(out, p)
@@ -81,6 +81,22 @@ func load(root, tags string, exclude []string, mode packages.LoadMode, patterns 
 		}
 	}
 	return out, loadErrs, nil
+}
+
+// moduleRelativePath strips the module path from pkg's import path.
+// Exclusion patterns name directories inside the audited module, so a
+// module called example.com/gen must not match the default "gen"
+// pattern and drop every package it contains.
+func moduleRelativePath(pkg *packages.Package) string {
+	if pkg.Module != nil && pkg.Module.Path != "" {
+		if pkg.PkgPath == pkg.Module.Path {
+			return ""
+		}
+		if rel, ok := strings.CutPrefix(pkg.PkgPath, pkg.Module.Path+"/"); ok {
+			return rel
+		}
+	}
+	return pkg.PkgPath
 }
 
 // parseDeclarations preserves package-level declarations and method
@@ -226,7 +242,10 @@ func isTagRune(r rune) bool {
 }
 
 // ShouldExclude reports whether any non-empty pattern in exclude
-// matches a run of complete path segments in path. Matching is
+// matches a run of complete path segments in path. Callers pass a
+// module-relative path (see [moduleRelativePath] and
+// [ModuleRelativeDir]) so where the module is checked out, and what it
+// is called, cannot exclude it wholesale. Matching is
 // segment-anchored, not substring: "gen" excludes "a/gen/b" but not
 // "a/agent/b", and "design/generated" excludes "x/design/generated"
 // but not "x/redesign/generated". Used by Load and by

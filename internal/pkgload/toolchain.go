@@ -49,6 +49,35 @@ func checkToolchain(root, builtWith string) error {
 	return fmt.Errorf("target module requires Go %s, but this Lagotto binary was built with %s; install a newer Lagotto release or rebuild it with Go %s or later", parsed.Go.Version, displayVersion, parsed.Go.Version)
 }
 
+// ModuleRoot returns the absolute directory of the go.mod governing
+// auditRoot, or auditRoot itself when there is none. Pair it with
+// [ModuleRelativeDir] so filesystem walkers exclude the same
+// directories as the loader's module-relative import paths.
+func ModuleRoot(auditRoot string) string {
+	if goMod, err := nearestGoMod(auditRoot); err == nil && goMod != "" {
+		return filepath.Dir(goMod)
+	}
+	if abs, err := filepath.Abs(auditRoot); err == nil {
+		return abs
+	}
+	return auditRoot
+}
+
+// ModuleRelativeDir returns dir relative to moduleRoot in slash form,
+// for use with [ShouldExclude]. The checkout location above the module
+// root therefore never influences exclusion.
+func ModuleRelativeDir(moduleRoot, dir string) string {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return filepath.ToSlash(dir)
+	}
+	rel, err := filepath.Rel(moduleRoot, absDir)
+	if err != nil {
+		return filepath.ToSlash(dir)
+	}
+	return filepath.ToSlash(rel)
+}
+
 func nearestGoMod(root string) (string, error) {
 	dir, err := filepath.Abs(root)
 	if err != nil {

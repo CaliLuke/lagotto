@@ -90,6 +90,46 @@ func TestLoadKeepsAgentDropsGen(t *testing.T) {
 	}
 }
 
+// Exclusion patterns name directories inside the module; a module path
+// that happens to contain an excluded segment must not drop the module.
+func TestLoadMatchesExclusionsAgainstModuleRelativePaths(t *testing.T) {
+	root := writeModule(t, map[string]string{
+		"go.mod":           "module example.com/gen\ngo 1.21\n",
+		"api/api.go":       "package api\n\ntype API struct{}\n",
+		"vendor2/gen/g.go": "package gen\n\ntype Generated struct{}\n",
+	})
+	pkgs, _, err := Load(root, "", []string{"gen"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, p := range pkgs {
+		paths = append(paths, p.PkgPath)
+	}
+	got := strings.Join(paths, ",")
+	if got != "example.com/gen/api" {
+		t.Fatalf("loaded %q, want only example.com/gen/api", got)
+	}
+}
+
+func TestModuleRelativeDirIgnoresCheckoutLocation(t *testing.T) {
+	root := writeModule(t, map[string]string{
+		"gen/proj/go.mod":            "module example.com/proj\ngo 1.21\n",
+		"gen/proj/internal/a/a.go":   "package a\n",
+		"gen/proj/internal/gen/b.go": "package gen\n",
+	})
+	moduleRoot := ModuleRoot(filepath.Join(root, "gen", "proj", "internal"))
+	for dir, want := range map[string]bool{
+		filepath.Join(root, "gen", "proj", "internal", "a"):   false,
+		filepath.Join(root, "gen", "proj", "internal", "gen"): true,
+	} {
+		rel := ModuleRelativeDir(moduleRoot, dir)
+		if got := ShouldExclude(rel, []string{"gen"}); got != want {
+			t.Errorf("ShouldExclude(%q) = %v, want %v", rel, got, want)
+		}
+	}
+}
+
 func TestLoadReportsPackageErrors(t *testing.T) {
 	root := writeModule(t, map[string]string{
 		"go.mod":    "module example.com/broken\ngo 1.21\n",

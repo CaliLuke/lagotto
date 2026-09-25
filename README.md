@@ -79,9 +79,15 @@ the `--fail-on` threshold (`critical|high|medium|low`). Incomplete
 package loading takes precedence over `--fail-on` and exits 1.
 
 `--suppress` is repeatable. Use `SMELL_ID` to suppress a detector
-globally or `SMELL_ID@LOCATION` to suppress only findings whose stable
-location starts with that value. JSON reports include
-`suppressed_findings` when any matches were removed.
+globally or `SMELL_ID@LOCATION` to suppress only findings at that
+location or nested beneath it. Matching uses whole location components
+(separated by `/`, `:`, or a space), so `G5@cmd/server` covers
+`cmd/server/main.go` but not `cmd/serverless/main.go`. JSON reports
+include `suppressed_findings` when any matches were removed.
+
+`--exclude` patterns match whole segments of module-relative paths:
+`gen` skips `internal/gen/...` but not `internal/agent`. The module path
+and the checkout location do not affect them.
 
 ### Repository configuration
 
@@ -122,7 +128,8 @@ to load an explicit file instead; unknown keys and invalid thresholds fail
 before packages are loaded. A one-callable component that qualifies only by
 the 40-line rule must also meet cyclomatic complexity 5; set
 `min_single_component_complexity: 0` to disable that post-candidate check. Set
-`cohesive_min_lines: 0` to disable G13. JSON
+`cohesive_min_lines: 0` to disable G13; a non-zero value must be at least
+`min_lines`. JSON
 output includes the exact Lagotto `version`, loaded config path, and fully
 resolved `configuration` (defaults plus repository and CLI overrides).
 Complexity values and `prioritization_hotspots` rank already-structural

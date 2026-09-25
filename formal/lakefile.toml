@@ -1,0 +1,5 @@
+name = "lagotto-formal"
+defaultTargets = ["Lagotto"]
+
+[[lean_lib]]
+name = "Lagotto"

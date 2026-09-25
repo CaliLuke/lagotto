@@ -55,3 +55,26 @@ type LaneConfig struct{}
 		t.Fatalf("did not expect G2 for generated declarations, got %+v", findings)
 	}
 }
+
+func TestG2_InitialismContinuationIsNotAStutter(t *testing.T) {
+	for _, test := range []struct {
+		pkg, name string
+		want      bool
+	}{
+		{"http", "HTTPServer", true},
+		{"http", "HTTPSRedirect", false},
+		{"http", "HTTPS", false},
+		{"http", "HTTPSServer", false},
+		{"http", "HTTP2Server", false},
+		{"id", "IDToken", true},
+		{"id", "IDPConfig", false},
+		{"ip", "IPv6Addr", false},
+		{"api", "APIKey", true},
+		{"lanes", "LaneConfig", true},
+		{"lanes", "LaneSCSI", true},
+	} {
+		if got := stutters(test.pkg, test.name); got != test.want {
+			t.Errorf("stutters(%q, %q) = %v, want %v", test.pkg, test.name, got, test.want)
+		}
+	}
+}

@@ -79,6 +79,23 @@ func astReceiverFallback(expr ast.Expr) string {
 	return ""
 }
 
+// isCgoSynthesized reports whether obj was declared by cgo rather than
+// the package author: cgo writes C type mappings such as
+// `type _Ctype_TSSymbol = _Ctype_ushort` into _cgo_gotypes.go in the
+// compiled file set. Those declarations are not layout decisions.
+func isCgoSynthesized(pkg *packages.Package, obj types.Object) bool {
+	if obj == nil {
+		return false
+	}
+	if strings.HasPrefix(obj.Name(), "_C") {
+		return true
+	}
+	if pkg == nil || pkg.Fset == nil || !obj.Pos().IsValid() {
+		return false
+	}
+	return filepath.Base(pkg.Fset.Position(obj.Pos()).Filename) == "_cgo_gotypes.go"
+}
+
 // isTestDouble matches names that signal an intentional comprehensive
 // interface implementation (Fake/Mock/Stub/Spy). Such types legitimately
 // own a method set as wide as the interface they satisfy.

@@ -59,12 +59,13 @@ type sourceFileStats struct {
 
 func collectPackageDirs(root string, pkgs []*packages.Package, exclude []string) map[string]packageDirContents {
 	out := map[string]packageDirContents{}
+	moduleRoot := pkgload.ModuleRoot(root)
 	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
 		if info.IsDir() {
-			if pkgload.ShouldExclude(path, exclude) {
+			if pkgload.ShouldExclude(pkgload.ModuleRelativeDir(moduleRoot, path), exclude) {
 				return filepath.SkipDir
 			}
 			return nil

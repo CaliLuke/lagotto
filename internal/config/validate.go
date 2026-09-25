@@ -30,6 +30,10 @@ func Validate(cfg Config) error {
 	if cfg.Mixed.CohesiveMinLines != nil && *cfg.Mixed.CohesiveMinLines < 0 {
 		return fmt.Errorf("mixed.cohesive_min_lines cannot be negative")
 	}
+	if cfg.Mixed.CohesiveMinLines != nil && cfg.Mixed.MinLines != nil &&
+		*cfg.Mixed.CohesiveMinLines > 0 && *cfg.Mixed.CohesiveMinLines < *cfg.Mixed.MinLines {
+		return fmt.Errorf("mixed.cohesive_min_lines must be 0 or at least mixed.min_lines")
+	}
 	if cfg.Mixed.Severity != "" {
 		if _, ok := audit.ParseSeverity(cfg.Mixed.Severity); !ok {
 			return fmt.Errorf("unknown mixed.severity %q (critical|high|medium|low)", cfg.Mixed.Severity)

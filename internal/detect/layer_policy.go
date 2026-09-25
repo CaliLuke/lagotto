@@ -445,11 +445,14 @@ func compilePolicyPattern(pattern string) (*regexp.Regexp, error) {
 
 func globPolicyRegexp(pattern string) string {
 	var expression strings.Builder
-	for index := 0; index < len(pattern); index++ {
-		switch pattern[index] {
+	// Iterate runes, not bytes: quoting one byte of a multi-byte UTF-8
+	// sequence as its own rune would make non-ASCII literals unmatchable.
+	runes := []rune(pattern)
+	for index := 0; index < len(runes); index++ {
+		switch runes[index] {
 		case '*':
-			if index+1 < len(pattern) && pattern[index+1] == '*' {
-				if index+2 < len(pattern) && pattern[index+2] == '/' {
+			if index+1 < len(runes) && runes[index+1] == '*' {
+				if index+2 < len(runes) && runes[index+2] == '/' {
 					expression.WriteString("(?:.*/)?")
 					index += 2
 				} else {
@@ -462,7 +465,7 @@ func globPolicyRegexp(pattern string) string {
 		case '?':
 			expression.WriteString("[^/]")
 		default:
-			expression.WriteString(regexp.QuoteMeta(string(pattern[index])))
+			expression.WriteString(regexp.QuoteMeta(string(runes[index])))
 		}
 	}
 	return expression.String()

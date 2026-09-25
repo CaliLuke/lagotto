@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `--suppress SMELL_ID@LOCATION` now matches whole location components.
+  `G5@cmd/server` suppresses `cmd/server/main.go` and `cmd/server (Server)`
+  but no longer silently suppresses `cmd/serverless/main.go`. A trailing `/`
+  on the location is ignored. Every selector that matches now also matched
+  before, so this change only removes over-suppression.
+- `--exclude` patterns are matched against module-relative paths. Before
+  this fix, a checkout below a directory named `gen`, `vendor`, or
+  `third_party` made the filesystem detectors (G3, G9–G12) report nothing. A
+  module whose path contained such a segment (for example `example.com/gen`)
+  loaded no packages at all. The loader and the filesystem walker now also
+  agree on the excluded set.
+- G5/G13 no longer promote a component with no type, function, or method
+  (for example a long `var` table used from another file) to a substantial
+  island. Such components are counted only as ignored, so the substantial,
+  minor, and ignored counts now partition `component_count` as documented.
+- G14 glob patterns with non-ASCII literals (`internal/café/**`) now match.
+- G1B no longer reports cgo's synthesized `_Ctype_*` aliases (for example a
+  C typedef family resolving to `_Ctype_ushort`) as a HIGH Decomposition
+  Theatre cluster. (#54)
+- A non-zero `cohesive_min_lines` / `--cohesive-min-lines` below
+  `min_lines` is now rejected. Before this fix, files between the two
+  floors that had two or more substantial components received no G5 or
+  G13 finding. (#56)
+- G2 no longer treats an all-caps initialism continuation as a stutter:
+  `http.HTTPSRedirect` and `id.IDPConfig` are clean, and `http.HTTPServer`
+  is still reported. (#57)
+
+### Added
+
+- `formal/` holds Lean 4 models of suppression matching, exclusion, G5/G13
+  classification, and report outcome. They prove the contracts above and
+  keep machine-checked counterexamples for the behaviour before the fix. Run
+  `lake build` in `formal/`.
+
 ## [0.2.7] - 2026-08-04
 
 ### Added

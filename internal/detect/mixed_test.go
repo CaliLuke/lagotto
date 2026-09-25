@@ -291,12 +291,13 @@ func (Renderer) Render() {}
 
 func TestValidateMixedOptions(t *testing.T) {
 	for name, mutate := range map[string]func(*MixedOptions){
-		"lines":      func(options *MixedOptions) { options.MinLines = 0 },
-		"members":    func(options *MixedOptions) { options.MinComponentMembers = 0 },
-		"component":  func(options *MixedOptions) { options.MinComponentLines = 0 },
-		"complexity": func(options *MixedOptions) { options.MinSingleComponentComplexity = -1 },
-		"severity":   func(options *MixedOptions) { options.Severity = "UNKNOWN" },
-		"cohesive":   func(options *MixedOptions) { options.CohesiveMinLines = -1 },
+		"lines":                    func(options *MixedOptions) { options.MinLines = 0 },
+		"members":                  func(options *MixedOptions) { options.MinComponentMembers = 0 },
+		"component":                func(options *MixedOptions) { options.MinComponentLines = 0 },
+		"complexity":               func(options *MixedOptions) { options.MinSingleComponentComplexity = -1 },
+		"severity":                 func(options *MixedOptions) { options.Severity = "UNKNOWN" },
+		"cohesive":                 func(options *MixedOptions) { options.CohesiveMinLines = -1 },
+		"cohesive below min lines": func(options *MixedOptions) { options.CohesiveMinLines = options.MinLines - 1 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			options := DefaultMixedOptions()
@@ -305,6 +306,16 @@ func TestValidateMixedOptions(t *testing.T) {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+}
+
+func TestValidateMixedOptionsAcceptsDisabledOrEqualCohesiveFloor(t *testing.T) {
+	for _, cohesive := range []int{0, 600, 601} {
+		options := DefaultMixedOptions()
+		options.MinLines, options.CohesiveMinLines = 600, cohesive
+		if err := ValidateMixedOptions(options); err != nil {
+			t.Errorf("cohesive-min-lines=%d: unexpected error %v", cohesive, err)
+		}
 	}
 }
 
@@ -395,5 +406,37 @@ var Account = Type("Account", func() { Field("name") })
 	})
 	if findings := ScanMixedConcern(pkgs); containsID(findings, "G13") {
 		t.Fatalf("did not expect a dot-imported DSL file to fire G13, got %+v", findings)
+	}
+}
+
+// A long var table with no type, function, or method is a graph artifact
+// (typically used from another file). It must be counted as ignored, not
+// promoted to a substantial island that manufactures a G5.
+func TestG5_ZeroPrimaryTableIsNotAnIsland(t *testing.T) {
+	table := "var messages = map[int]string{\n"
+	for i := 0; i < 45; i++ {
+		table += fmt.Sprintf("\t%d: \"message %d\",\n", i, i)
+	}
+	table += "}\n"
+	body := largeSource(`package foo
+
+type Parser struct{}
+func (Parser) Parse(input string) string { return normalize(input) }
+func normalize(input string) string { return input }
+
+` + table)
+	findings := ScanMixedConcernWithOptions(fakeModule(t, map[string]string{
+		"parser.go": body,
+		"use.go":    "package foo\n\nfunc Message(code int) string { return messages[code] }\n",
+	}), MixedOptions{MinLines: 600, MinComponentMembers: 2, MinComponentLines: 40, MinSingleComponentComplexity: 5, Severity: audit.SevMedium, CohesiveMinLines: 600})
+	if len(findings) != 1 || findings[0].SmellID != "G13" {
+		t.Fatalf("expected G13 for one real cluster plus a data table, got %+v", findings)
+	}
+	evidence := findings[0].Evidence
+	substantial := evidence["substantial_component_count"].(int)
+	minor := evidence["minor_component_count"].(int)
+	ignored := evidence["ignored_component_count"].(int)
+	if substantial != 1 || ignored != 1 || substantial+minor+ignored != evidence["component_count"].(int) {
+		t.Fatalf("categories must partition components, got %#v", evidence)
 	}
 }

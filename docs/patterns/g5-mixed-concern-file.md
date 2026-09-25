@@ -94,7 +94,9 @@ never creates a finding by itself.
 
 `cohesive_min_lines` configures the separate LOW-severity G13 signal; set it to
 zero to disable G13. It does not relax or alter G5's disconnected-component
-requirement.
+requirement. A non-zero value must be at least `min_lines`. A lower value
+would leave files between the two floors that have two or more substantial
+components with no finding at all, so Lagotto rejects it.
 
 ## Evidence
 

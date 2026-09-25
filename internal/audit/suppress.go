@@ -12,8 +12,8 @@ type suppression struct {
 
 // ValidateSuppressions checks --suppress selectors without applying
 // them. A selector is SMELL_ID to suppress that detector everywhere,
-// or SMELL_ID@LOCATION to suppress only findings whose stable location
-// starts with LOCATION.
+// or SMELL_ID@LOCATION to suppress only findings at LOCATION or nested
+// beneath it (see [locationWithin]).
 func ValidateSuppressions(raw []string) error {
 	_, err := parseSuppressions(raw)
 	return err
@@ -54,7 +54,11 @@ func parseSuppressions(raw []string) ([]suppression, error) {
 		if hasLocation && location == "" {
 			return nil, fmt.Errorf("invalid --suppress selector %q: location after @ is empty", value)
 		}
-		out = append(out, suppression{smellID: id, locationPrefix: filepathSlash(location)})
+		location = filepathSlash(location)
+		if trimmed := strings.TrimRight(location, "/"); trimmed != "" {
+			location = trimmed
+		}
+		out = append(out, suppression{smellID: id, locationPrefix: location})
 	}
 	return out, nil
 }
@@ -65,11 +69,26 @@ func isSuppressed(finding Finding, suppressions []suppression) bool {
 		if strings.ToUpper(finding.SmellID) != selector.smellID {
 			continue
 		}
-		if selector.locationPrefix == "" || strings.HasPrefix(location, selector.locationPrefix) {
+		if selector.locationPrefix == "" || locationWithin(location, selector.locationPrefix) {
 			return true
 		}
 	}
 	return false
+}
+
+// locationWithin reports whether location is scope itself or nested
+// beneath it. Finding locations are built from components separated by
+// '/' (directories and files), ':' (symbols) and ' ' ("pkg (Type)"),
+// so scope must end on one of those boundaries: cmd/server matches
+// cmd/server/main.go and cmd/server (Server) but not cmd/serverless.
+// formal/Lagotto/Suppress.lean proves this sound and complete for the
+// specification and a refinement of plain prefix matching.
+func locationWithin(location, scope string) bool {
+	rest, ok := strings.CutPrefix(location, scope)
+	if !ok {
+		return false
+	}
+	return rest == "" || strings.ContainsRune("/: ", rune(rest[0]))
 }
 
 func filepathSlash(value string) string {

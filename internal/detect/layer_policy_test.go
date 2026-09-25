@@ -304,6 +304,8 @@ func TestPolicyPatternMatching(t *testing.T) {
 		{"internal/**/handler.go", "github.com/acme/app/internal/handler.go", "github.com/acme/app"},
 		{"internal/**/handler.go", "github.com/acme/app/internal/http/handler.go", "github.com/acme/app"},
 		{"github.com/acme/shared/*", "github.com/acme/shared/store", "github.com/acme/app"},
+		{"internal/café/**", "github.com/acme/app/internal/café/menu", "github.com/acme/app"},
+		{"internal/caf?/*", "github.com/acme/app/internal/café/menu", "github.com/acme/app"},
 	} {
 		if !matchesPolicyPatterns([]string{test.pattern}, test.value, test.module) {
 			t.Fatalf("pattern %q should match %q", test.pattern, test.value)

@@ -33,7 +33,8 @@ func DefaultMixedOptions() MixedOptions {
 	}
 }
 
-// ValidateMixedOptions rejects non-positive thresholds and unknown severities.
+// ValidateMixedOptions rejects non-positive thresholds, unknown severities,
+// and a non-zero G13 floor below the G5 floor.
 func ValidateMixedOptions(options MixedOptions) error {
 	if options.MinLines < 1 {
 		return fmt.Errorf("mixed min-lines must be at least 1")
@@ -52,6 +53,12 @@ func ValidateMixedOptions(options MixedOptions) error {
 	}
 	if options.CohesiveMinLines < 0 {
 		return fmt.Errorf("mixed cohesive-min-lines cannot be negative")
+	}
+	// G13 means "large but cohesive" and yields to G5. Below min-lines a
+	// file with two substantial clusters qualifies for neither, so a
+	// lower G13 floor would silently skip exactly the files it exposes.
+	if options.CohesiveMinLines > 0 && options.CohesiveMinLines < options.MinLines {
+		return fmt.Errorf("mixed cohesive-min-lines (%d) must be 0 or at least min-lines (%d); otherwise mixed files between the two floors get no finding", options.CohesiveMinLines, options.MinLines)
 	}
 	return nil
 }
@@ -172,7 +179,7 @@ func qualifyComponentsAfterComplexity(components []cohesionComponent, options Mi
 			minor++
 			continue
 		}
-		if qualifiesByMembers || qualifiesByLines {
+		if nominatesComponent(component, options) {
 			substantial = append(substantial, component)
 		} else if component.PrimaryCount > 0 {
 			minor++
@@ -198,16 +205,28 @@ func qualifyComponents(components []cohesionComponent, options MixedOptions) ([]
 	var substantial []cohesionComponent
 	minor := 0
 	for _, component := range components {
-		// A single tiny declaration can be an incidental helper. Requiring a
-		// configurable member count or line span keeps G5 focused on separable
-		// implementation islands rather than harmless orphans.
-		if component.PrimaryCount >= options.MinComponentMembers || component.LineCount >= options.MinComponentLines {
+		if nominatesComponent(component, options) {
 			substantial = append(substantial, component)
 		} else if component.PrimaryCount > 0 {
 			minor++
 		}
 	}
 	return substantial, minor
+}
+
+// nominatesComponent is the structural rule for a substantial component.
+// A single tiny declaration can be an incidental helper; requiring a
+// configurable member count or line span keeps G5 focused on separable
+// implementation islands rather than harmless orphans. A component with
+// no type, function, or method is a graph artifact (for example a long
+// var or const table used from another file): it is ignored, never an
+// island, so substantial, minor, and ignored partition the components.
+// formal/Lagotto/Mixed.lean proves the partition.
+func nominatesComponent(component cohesionComponent, options MixedOptions) bool {
+	if component.PrimaryCount == 0 {
+		return false
+	}
+	return component.PrimaryCount >= options.MinComponentMembers || component.LineCount >= options.MinComponentLines
 }
 
 func smallestComponent(components []cohesionComponent) cohesionComponent {

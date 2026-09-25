@@ -519,7 +519,7 @@ func scanAliasClusters(pkg *packages.Package) []audit.Finding {
 		}
 		obj := scope.Lookup(name)
 		tn, ok := obj.(*types.TypeName)
-		if !ok || !tn.IsAlias() {
+		if !ok || !tn.IsAlias() || isCgoSynthesized(pkg, tn) {
 			continue
 		}
 		// Go 1.22+ models aliases as *types.Alias; types.Unalias()
@@ -536,7 +536,7 @@ func scanAliasClusters(pkg *packages.Package) []audit.Finding {
 		if named.Obj().Pkg() == nil || named.Obj().Pkg() != pkg.Types {
 			continue // alias to external type — not interesting here
 		}
-		if isTestDouble(named.Obj().Name()) {
+		if isTestDouble(named.Obj().Name()) || isCgoSynthesized(pkg, named.Obj()) {
 			continue
 		}
 		// Preserve type arguments in the cluster identity. ClientRequest[A]

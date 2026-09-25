@@ -2,6 +2,9 @@ package detect
 
 import (
 	"fmt"
+	"go/token"
+	"go/types"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -606,5 +609,44 @@ func TestG1_PromoterTieIsDeterministic(t *testing.T) {
 	}
 	if name, count := dominantPromoter(map[string]int{"beta": 8, "alpha": 8}); name != "alpha" || count != 8 {
 		t.Fatalf("dominantPromoter tie = %q, %d; want alpha, 8", name, count)
+	}
+}
+
+// cgo declares C type mappings as aliases (type _Ctype_TSSymbol =
+// _Ctype_ushort) in the compiled file set. They are not a receiver
+// decomposition and must not produce a HIGH G1B.
+func TestG1B_IgnoresCgoSynthesizedAliases(t *testing.T) {
+	if out, err := exec.Command("go", "env", "CGO_ENABLED").Output(); err != nil || strings.TrimSpace(string(out)) != "1" {
+		t.Skip("cgo is not enabled")
+	}
+	pkgs := fakeModule(t, map[string]string{"binding/binding.go": `package binding
+
+/*
+#include <stdint.h>
+typedef unsigned short TSSymbol;
+typedef unsigned short TSStateId;
+typedef unsigned short TSFieldId;
+static uint16_t first(TSSymbol s, TSStateId a, TSFieldId f) { return s + a + f; }
+*/
+import "C"
+
+func First(s, a, f uint16) uint16 {
+	return uint16(C.first(C.TSSymbol(s), C.TSStateId(a), C.TSFieldId(f)))
+}
+`})
+	for _, finding := range ScanReceivers(pkgs) {
+		if finding.SmellID == "G1B" {
+			t.Fatalf("cgo aliases produced %+v", finding)
+		}
+	}
+}
+
+func TestIsCgoSynthesizedMatchesCgoNames(t *testing.T) {
+	pkg := types.NewPackage("example.com/binding", "binding")
+	if !isCgoSynthesized(nil, types.NewTypeName(token.NoPos, pkg, "_Ctype_ushort", nil)) {
+		t.Fatal("_Ctype_ names are cgo-synthesized")
+	}
+	if isCgoSynthesized(nil, types.NewTypeName(token.NoPos, pkg, "Mutator", nil)) {
+		t.Fatal("ordinary names are not cgo-synthesized")
 	}
 }

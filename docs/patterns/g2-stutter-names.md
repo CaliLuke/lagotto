@@ -28,6 +28,11 @@ identifier-aware: `lanes.LaneConfig` matches because `Lane` is the
 package name's leading word, but `lanes.Landfall` does not because
 `Lan` doesn't match a complete word boundary.
 
+All-caps initialisms are word-aware too. `http.HTTPServer` stutters
+(`HTTP` + `Server`), but `http.HTTPSRedirect` and `id.IDPConfig` do not:
+the next two runes are upper-case, so the initialism continues (`HTTPS`,
+`IDP`) instead of starting a new word.
+
 Singular/plural tolerance allows `lanes` to match `Lane` (drop the
 trailing `s`).
 

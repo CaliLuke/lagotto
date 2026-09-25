@@ -38,6 +38,10 @@ cosmetic receiver decomposition.
 Cross-package re-export aliases (`type A = otherpkg.Real`) do not
 fire — that's a legitimate compatibility shape.
 
+Aliases that cgo synthesizes (`type _Ctype_TSSymbol = _Ctype_ushort` in
+`_cgo_gotypes.go`) are skipped. They map C typedefs and are not a
+receiver decomposition.
+
 | Severity | Condition   |
 | -------- | ----------- |
 | CRITICAL | ≥6 aliases  |

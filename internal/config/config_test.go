@@ -67,6 +67,7 @@ func TestLoadRejectsUnknownAndInvalidPolicy(t *testing.T) {
 		"unknown":         "version: 1\nmixt: {}\n",
 		"threshold":       "version: 1\nmixed:\n  min_lines: 0\n",
 		"cohesive":        "version: 1\nmixed:\n  cohesive_min_lines: -1\n",
+		"cohesive floor":  "version: 1\nmixed:\n  min_lines: 800\n  cohesive_min_lines: 700\n",
 		"complexity":      "version: 1\nmixed:\n  min_single_component_complexity: -1\n",
 		"suppress":        "version: 1\nsuppress: ['bad selector']\n",
 		"layer fields":    "version: 1\nlayer_policy:\n  - name: thin\n    paths: [internal/**]\n",

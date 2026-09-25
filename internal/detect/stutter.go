@@ -105,7 +105,24 @@ func stutters(pkgName, name string) bool {
 	// (CamelCase boundary), confirming we matched a whole leading
 	// word, not a coincidental prefix match.
 	next := nameRunes[matched]
-	return unicode.IsUpper(next)
+	if !unicode.IsUpper(next) {
+		return false
+	}
+	return !continuesInitialism(nameRunes, matched)
+}
+
+// continuesInitialism reports whether an all-caps prefix of length
+// matched is the start of a longer initialism rather than a whole
+// word: HTTPS in HTTPSRedirect (next two runes upper-case, or the
+// name ends after the next rune) is not HTTP plus a new word, while
+// HTTPServer is (the rune after S is lower-case).
+func continuesInitialism(name []rune, matched int) bool {
+	for _, r := range name[:matched] {
+		if unicode.IsLetter(r) && !unicode.IsUpper(r) {
+			return false
+		}
+	}
+	return matched+1 == len(name) || unicode.IsUpper(name[matched+1])
 }
 
 func runePrefix(s, prefix []rune) bool {
