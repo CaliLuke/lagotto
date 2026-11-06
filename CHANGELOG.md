@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Update Cobra and pflag to their latest stable releases and golangci-lint
+  to v2.15.0 for Go 1.27 support.
+
 ### Fixed
+
+- Load Go 1.27 export data with `golang.org/x/tools v0.52.0`. Release binaries
+  now use Go 1.27, and CI covers Go 1.26 and Go 1.27. (#58)
 
 - `--suppress SMELL_ID@LOCATION` now matches whole location components.
   `G5@cmd/server` suppresses `cmd/server/main.go` and `cmd/server (Server)`

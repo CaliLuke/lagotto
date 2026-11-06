@@ -213,3 +213,23 @@ func TestValidateTags(t *testing.T) {
 		}
 	}
 }
+
+// Exercise export-data decoding using the toolchain running the test. In the
+// Go 1.27 CI job this catches readers that only understand version 4.
+func TestLoadStandardLibraryExportData(t *testing.T) {
+	root := writeModule(t, map[string]string{
+		"go.mod":   "module example.com/exportdata\ngo 1.26\n",
+		"ready.go": "package exportdata\nimport \"context\"\nfunc Ready(ctx context.Context) error { return ctx.Err() }\n",
+	})
+	pkgs, loadErrs, err := Load(root, "", nil)
+	if err != nil || len(loadErrs) != 0 {
+		t.Fatalf("Load: %v, errors: %v", err, loadErrs)
+	}
+	if len(pkgs) != 1 || pkgs[0].Types.Scope().Lookup("Ready") == nil {
+		t.Fatalf("missing loaded Ready function: %v", pkgs)
+	}
+	typed, typeErrs, err := LoadTypes(root, "", nil)
+	if err != nil || len(typeErrs) != 0 || len(typed) != 1 {
+		t.Fatalf("LoadTypes: %v, errors: %v", err, typeErrs)
+	}
+}
