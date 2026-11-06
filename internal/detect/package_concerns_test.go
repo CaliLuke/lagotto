@@ -129,3 +129,19 @@ func TestPackageConcernsRemoveOverlapForRelativeRoot(t *testing.T) {
 		t.Fatalf("relative subroot overlap: %+v", got)
 	}
 }
+
+func TestPackageConcernsRejectWholeImplementationAndItsSupport(t *testing.T) {
+	files := packageConcernFixture()
+	delete(files, "pkg/runner.go")
+	if got := ScanPackageConcerns(fakeModule(t, files)); len(got) != 0 {
+		t.Fatalf("whole implementation plus support is not a separate concern: %+v", got)
+	}
+}
+
+func TestPackageConcernsAllowIndependentZeroInboundGroup(t *testing.T) {
+	files := packageConcernFixture()
+	files["pkg/runner.go"] = "package pkg\nfunc Independent() int { return 42 }\n"
+	if got := ScanPackageConcerns(fakeModule(t, files)); len(got) != 1 {
+		t.Fatalf("lost independent zero-inbound group: %+v", got)
+	}
+}

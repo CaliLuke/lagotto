@@ -62,6 +62,10 @@ lagotto layers .
 
 # Review materialized raw-result pipelines
 lagotto results .
+
+# Review package boundaries and logic-heavy entry points
+lagotto packages .
+lagotto mains .
 ```
 
 JSON output is the default contract for tooling. Each finding has
@@ -317,7 +321,7 @@ batches to keep peak memory proportional to a slice of the module.
   Foreign Holder; Stutter Names; Build-Tag Pair Sprawl; Disconnected File
   Concerns; Internal Re-Export Tunnel; a generic filename with ≥10 declarations
   over ≥200 lines; Cross-Layer Orchestration by default (repository-configurable).
-- **LOW** — Prefix Cluster; Premature Package; Large Cohesive File; Shadow
+- **LOW** — Disconnected Package Concerns; Fat Main; Prefix Cluster; Premature Package; Large Cohesive File; Shadow
   Suffix; Init Coupling; Generic Filename.
 
 ## What lagotto does NOT flag

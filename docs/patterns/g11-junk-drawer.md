@@ -80,7 +80,7 @@ cleaner, that remains an option, not a requirement.
 ## Package names
 
 G11 also examines the loaded package name, not the directory name. It reports
-`util`, `utils`, `common`, `helper`, `helpers`, `misc`, `shared`, `base` and `lib`.
+`util`, `utils`, `common`, `helper`, `helpers`, `misc`, `shared` and `lib`.
 We retain G11 because both variants describe an uninformative name; existing
 G11 suppressions continue to work. `evidence.kind` distinguishes `file` from
 `package`. Both findings use the directory as their location.
@@ -92,7 +92,7 @@ package path/name, authored file count, exported identifier count, importer
 count and importer paths. Files selected by the current build supply the typed
 exports; the filesystem pass supplies production reuse across build tags.
 
-Generated-only packages and test helpers are excluded. `models` and `types`
-are deliberately not reported: they can accurately describe cohesive schemas
+Generated-only packages and test helpers are excluded. `base`, `models` and `types`
+are deliberately not reported: they can accurately describe framework primitives or cohesive schemas
 or DTOs, and this naming-only detector cannot establish their lack of cohesion.
 A directory named `utils` declaring `package encoding` is also not a match.

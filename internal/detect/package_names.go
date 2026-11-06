@@ -14,7 +14,7 @@ import (
 // cohesive schemas and DTOs, so a name alone is insufficient evidence.
 var genericPackageNames = map[string]bool{
 	"util": true, "utils": true, "common": true, "helper": true, "helpers": true,
-	"misc": true, "shared": true, "base": true, "lib": true,
+	"misc": true, "shared": true, "lib": true,
 }
 
 // ScanGenericPackages extends G11 to loaded package names, independently of

@@ -34,8 +34,8 @@ still implement useful behavior.
 Embedded external interface boundaries and stateless standard-library wrappers
 remain LOW review signals because they may be intentional API or testing seams.
 
-Methods required by a named interface in the same package are excluded when
-the receiver implements the complete interface. Canonical interface-contract
+Methods required by a named interface in the same package or a directly imported package are excluded when
+the receiver or its pointer implements the complete interface. Canonical interface-contract
 signatures `Error() string`, `String() string`, and `Unwrap() error` /
 `Unwrap() []error` are also excluded even when the standard interface is not
 declared locally. In both cases, a thin implementation is not evidence of a

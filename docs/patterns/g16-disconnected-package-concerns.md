@@ -12,7 +12,10 @@ fields and methods. Receiver declarations and their methods stay together;
 local named interface families are conservatively connected in both directions.
 Generated files cannot nominate candidates but their references still constrain
 extraction. At most one outside file may reference the candidate, and no
-outbound dependency may reach the candidate, even transitively.
+outbound dependency may reach the candidate, even transitively. At least one
+authored declaration-bearing file must remain outside the group and its entire
+outbound dependency closure; an implementation plus its support files is still
+one package concern.
 
 For example, `lang_parse.go`, `lang_resolve.go` and `lang_emit.go` may form a
 candidate when only `runner.go` calls them and they use independent declarations

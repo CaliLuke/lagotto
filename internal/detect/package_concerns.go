@@ -186,6 +186,18 @@ func (g packageFileGraph) concern(cluster prefixCluster) (packageConcern, bool) 
 		seen[file] = true
 		pending = append(pending, adjacent[file]...)
 	}
+	// A concern plus all of its support is still just the whole package.
+	// Require another authored responsibility outside that dependency closure.
+	independentRemainder := false
+	for file := range g.lines {
+		if !members[file] && !seen[file] {
+			independentRemainder = true
+			break
+		}
+	}
+	if !independentRemainder {
+		return group, false
+	}
 	sortFileReferences(group.Inbound)
 	sortFileReferences(group.Outbound)
 	return group, true

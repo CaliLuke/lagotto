@@ -292,3 +292,22 @@ func (Wrapper) Sum(values ...int) int { return inner.Sum(values...) }
 		t.Fatalf("lost pure variadic forwarding: %+v", findings)
 	}
 }
+
+func TestG6ImportedInterfaceContractDoesNotFire(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"inner/inner.go": `package inner
+ type Contract interface { Compute(int) int; Marker() }
+ func Compute(n int) int { return n }
+ `,
+		"outer/outer.go": `package outer
+ import "example.com/test/inner"
+ type Adapter struct{}
+ func (Adapter) Compute(n int) int { return inner.Compute(n) }
+ func (*Adapter) Marker() {}
+ var _ inner.Contract = (*Adapter)(nil)
+ `,
+	})
+	if got := ScanFacades(pkgs); len(got) != 0 {
+		t.Fatalf("required imported contract reported: %+v", got)
+	}
+}

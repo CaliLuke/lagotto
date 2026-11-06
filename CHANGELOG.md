@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - G11 now reports generic package names with authored export and production
   importer counts; `evidence.kind` distinguishes package and file findings.
-  Cohesive `models`/`types` names and generated/test-helper packages stay exempt. (#52)
+  Cohesive `base`/`models`/`types` names and generated/test-helper packages stay exempt. (#52)
 
 - G17 Fat Main and `lagotto mains`: LOW boundary reviews for large main
   packages with many helper functions or types with methods. (#51)
@@ -31,9 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Preserve module-relative detector locations for relative audit roots,
+  count authored cgo exports correctly, and keep documentation-only files
+  from creating a false package boundary.
+- G6 recognizes directly imported interface contracts; G11 excludes `base`
+  after corpus review found intentional framework/schema boundaries. G16
+  rejects a whole implementation together with its supporting dependencies.
+
 - G6 requires unchanged parameter forwarding. Receiver binding, formatting,
   conversion, constants, nested calls and short guards no longer masquerade as
-  pure pass-throughs. A 44-finding real-code sample found no true positives
+  pure pass-throughs. A 40-finding public-code sample found no true positives
   under the former rule; see the release corpus report. (#55)
 
 - Load Go 1.27 export data with `golang.org/x/tools v0.52.0`. Release binaries
