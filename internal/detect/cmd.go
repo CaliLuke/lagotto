@@ -164,6 +164,7 @@ func runAuditScan(f *Flags, args []string) error {
 			return err
 		}
 		loadErrs = appendUnique(loadErrs, batchErrs...)
+		findings = append(findings, ScanFatMains(pkgs)...)
 		findings = append(findings, ScanPackageConcerns(pkgs)...)
 		findings = append(findings, ScanStutter(pkgs)...)
 		findings = append(findings, ScanFacades(pkgs)...)
@@ -409,6 +410,15 @@ func PackagesCmd(f *Flags) *cobra.Command {
 	return &cobra.Command{Use: "packages [path]", Short: "Find substantial file groups with narrow dependency boundaries.", Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding { return ScanPackageConcerns(pkgs) })
+		},
+	}
+}
+
+// MainsCmd returns the mains subcommand for G17.
+func MainsCmd(f *Flags) *cobra.Command {
+	return &cobra.Command{Use: "mains [path]", Short: "Find logic-heavy main packages.", Args: cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding { return ScanFatMains(pkgs) })
 		},
 	}
 }

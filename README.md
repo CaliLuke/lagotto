@@ -166,6 +166,7 @@ keep strict dependency boundaries in a tool such as depguard.
 | G14 | Cross-Layer Orchestration | A configured layer coordinates too many services/stores while mapping generated boundary types |
 | G15 | Materialized Result Pipeline | A complete `[]map[string]any` result set is transformed into a second typed slice             |
 | G16 | Disconnected Package Concerns | Substantial prefix groups with narrow, acyclic file dependency boundaries |
+| G17 | Fat Main | A 1000+ line main package with at least 3 types with methods or 15 helper functions |
 
 ## The headline detector: Receiver Monolith and its disguises
 
@@ -324,7 +325,8 @@ batches to keep peak memory proportional to a slice of the module.
 - A `Conn` struct with many low-level methods at one abstraction level
   (`Read`, `Write`, `Close`...). Method count alone isn't the smell;
   spanning ≥3 distinct concerns is.
-- `package main` with many files — entry-point packages are exempt.
+- `package main` with many files alone — G17 requires both size and structural
+  evidence of logic beyond wiring; small commands remain exempt.
 - Test doubles (`Fake*`, `Mock*`, `Stub*`, `Spy*`) and `testutil`
   packages, which legitimately implement wide interfaces.
 - Generated files carrying the standard `// Code generated ... DO NOT EDIT.`

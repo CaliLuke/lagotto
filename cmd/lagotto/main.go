@@ -92,6 +92,7 @@ Exit codes: 0 clean run, 1 run failed, 2 findings met --fail-on.`,
 		detect.LayersCmd(flags),
 		detect.ResultsCmd(flags),
 		detect.PackagesCmd(flags),
+		detect.MainsCmd(flags),
 	)
 
 	if err := rootCmd.Execute(); err != nil {

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- G17 Fat Main and `lagotto mains`: LOW boundary reviews for large main
+  packages with many helper functions or types with methods. (#51)
+
 - G16 Disconnected Package Concerns and `lagotto packages`: structural boundary
   evidence for substantial file-prefix groups; full audits remove the matching
   G9 prefixes to avoid duplicate reports. (#50)
