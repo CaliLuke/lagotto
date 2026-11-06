@@ -130,7 +130,7 @@ func (Service) Compute(n int) int {
 	}
 }
 
-func TestG6_StateBindingAndStdlibBoundaryAreLow(t *testing.T) {
+func TestG6_StateBindingExcludedAndStdlibBoundaryLow(t *testing.T) {
 	pkgs := fakeModule(t, map[string]string{
 		"inner/inner.go": "package inner\n\nfunc Fetch(base, id string) string { return base + id }\n",
 		"outer/outer.go": `package outer
@@ -148,8 +148,8 @@ func (Clock) Now() time.Time { return time.Now() }
 `,
 	})
 	findings := ScanFacades(pkgs)
-	if len(findings) != 2 {
-		t.Fatalf("expected two contextual facade findings, got %+v", findings)
+	if len(findings) != 1 || findings[0].Evidence["receiver"] != "Clock" {
+		t.Fatalf("expected only stateless stdlib boundary, got %+v", findings)
 	}
 	for _, finding := range findings {
 		if finding.Severity != "LOW" {
@@ -255,5 +255,40 @@ func (Value) String(prefix string) string { return inner.Render(prefix) }
 	})
 	if findings := ScanFacades(pkgs); !containsID(findings, "G6") {
 		t.Fatalf("expected non-contract String signature to remain detectable, got %+v", findings)
+	}
+}
+
+func TestG6ArgumentTransformationsAndGuardsAddBehavior(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"inner/inner.go": "package inner\nfunc Compute(n int) int { return n }\nfunc Pair(a,b int) int { return a+b }\n",
+		"outer/outer.go": `package outer
+import "example.com/test/inner"
+type Wrapper struct{ value int }
+func (w Wrapper) State() int { return inner.Compute(w.value) }
+func (w Wrapper) Constant() int { return inner.Compute(42) }
+func (w Wrapper) Arithmetic(n int) int { return inner.Compute(n+1) }
+func (w Wrapper) Nested(n int) int { return inner.Compute(inner.Compute(n)) }
+func (w Wrapper) Guard(n int) int { if n<0 { return 0 }; return inner.Compute(n) }
+func (w Wrapper) Assignment(n int) int { n++; return inner.Compute(n) }
+func (w Wrapper) Reorder(a,b int) int { return inner.Pair(b,a) }
+func (w Wrapper) Drop(a,b int) int { return inner.Compute(a) }
+`,
+	})
+	if findings := ScanFacades(pkgs); len(findings) != 0 {
+		t.Fatalf("behavior reported as forwarding: %+v", findings)
+	}
+}
+
+func TestG6VariadicForwarding(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"inner/inner.go": "package inner\nfunc Sum(values ...int) int { return len(values) }\n",
+		"outer/outer.go": `package outer
+import "example.com/test/inner"
+type Wrapper struct{}
+func (Wrapper) Sum(values ...int) int { return inner.Sum(values...) }
+`,
+	})
+	if findings := ScanFacades(pkgs); len(findings) != 1 {
+		t.Fatalf("lost pure variadic forwarding: %+v", findings)
 	}
 }

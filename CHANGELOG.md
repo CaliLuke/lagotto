@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- G6 requires unchanged parameter forwarding. Receiver binding, formatting,
+  conversion, constants, nested calls and short guards no longer masquerade as
+  pure pass-throughs. A 44-finding real-code sample found no true positives
+  under the former rule; see the release corpus report. (#55)
+
 - Load Go 1.27 export data with `golang.org/x/tools v0.52.0`. Release binaries
   now use Go 1.27, and CI covers Go 1.26 and Go 1.27. (#58)
 
