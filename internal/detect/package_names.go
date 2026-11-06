@@ -2,6 +2,7 @@ package detect
 
 import (
 	"fmt"
+	"go/token"
 	"go/types"
 	"path/filepath"
 
@@ -49,7 +50,16 @@ func ScanGenericPackages(root string, pkgs []*packages.Package, dirs map[string]
 					exports++
 				}
 			}
-			// Exported methods are identifiers callers can use too.
+			// Count each locally authored method declaration once. Defined interface
+			// copies may reuse a local or imported interface's method objects.
+			countedMethods := map[token.Pos]bool{}
+			countMethod := func(method *types.Func) {
+				if method.Pkg() != pkg.Types || !method.Exported() || countedMethods[method.Pos()] || !authored[filepath.Base(pkg.Fset.Position(method.Pos()).Filename)] {
+					return
+				}
+				countedMethods[method.Pos()] = true
+				exports++
+			}
 			for _, name := range pkg.Types.Scope().Names() {
 				obj, ok := pkg.Types.Scope().Lookup(name).(*types.TypeName)
 				if !ok || obj.IsAlias() {
@@ -61,17 +71,11 @@ func ScanGenericPackages(root string, pkgs []*packages.Package, dirs map[string]
 				}
 				if iface, ok := named.Underlying().(*types.Interface); ok {
 					for i := 0; i < iface.NumExplicitMethods(); i++ {
-						method := iface.ExplicitMethod(i)
-						if method.Exported() && authored[filepath.Base(pkg.Fset.Position(method.Pos()).Filename)] {
-							exports++
-						}
+						countMethod(iface.ExplicitMethod(i))
 					}
 				}
 				for i := 0; i < named.NumMethods(); i++ {
-					method := named.Method(i)
-					if method.Exported() && authored[filepath.Base(pkg.Fset.Position(method.Pos()).Filename)] {
-						exports++
-					}
+					countMethod(named.Method(i))
 				}
 			}
 		}

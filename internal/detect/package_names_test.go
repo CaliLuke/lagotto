@@ -120,3 +120,29 @@ func TestGenericPackageCountsExplicitInterfaceMethodsOnce(t *testing.T) {
 		t.Fatalf("incorrect explicit interface count: %+v", findings)
 	}
 }
+
+func TestGenericPackageCountsOwnedInterfaceDeclarationsOnly(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"contract/api.go": `package contract
+ type API interface { A(); B(); C(); D(); E(); F(); G(); H(); I(); J() }
+ `,
+		"utils/api.go": `package utils
+ import "example.com/test/contract"
+ type Original interface { Method() }
+ type Copy1 Original
+ type Copy2 Original
+ type Copy3 Original
+ type Copy4 Original
+ type Copy5 Original
+ type Imported contract.API
+ `,
+		"one/one.go":     "package one\nimport \"example.com/test/utils\"\nvar Value utils.Original",
+		"two/two.go":     "package two\nimport \"example.com/test/utils\"\nvar Value utils.Original",
+		"three/three.go": "package three\nimport \"example.com/test/utils\"\nvar Value utils.Original",
+	})
+	root := pkgs[0].Module.Dir
+	findings := ScanGenericPackages(root, pkgs, collectPackageDirs(root, pkgs, nil))
+	if len(findings) != 1 || findings[0].Evidence["exported_identifier_count"] != 8 || findings[0].Severity != audit.SevLow {
+		t.Fatalf("interface copies inflated authored counts: %+v", findings)
+	}
+}
