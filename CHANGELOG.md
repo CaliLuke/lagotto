@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-05
+
 ### Added
 
 - G11 now reports generic package names with authored export and production
@@ -41,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - G6 requires unchanged parameter forwarding. Receiver binding, formatting,
   conversion, constants, nested calls and short guards no longer masquerade as
   pure pass-throughs. A 40-finding public-code sample found no true positives
-  under the former rule; see the release corpus report. (#55)
+  under the former rule; see [the release corpus report](docs/validation/v0.3.0-corpus.md). (#55)
 
 - Load Go 1.27 export data with `golang.org/x/tools v0.52.0`. Release binaries
   now use Go 1.27, and CI covers Go 1.26 and Go 1.27. (#58)
@@ -294,7 +296,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Goreleaser configuration with multi-arch darwin/linux builds and
   Homebrew tap publish.
 
-[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.2.7...HEAD
+[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/CaliLuke/lagotto/compare/v0.2.7...v0.3.0
 [0.2.7]: https://github.com/CaliLuke/lagotto/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/CaliLuke/lagotto/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/CaliLuke/lagotto/compare/v0.2.4...v0.2.5
