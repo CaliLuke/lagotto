@@ -293,3 +293,25 @@ func TestScanFSIgnoresExcludedSegmentsAboveModuleRoot(t *testing.T) {
 		t.Fatalf("G12 locations = %v, want [internal/solo]", locations)
 	}
 }
+
+func TestG9ConsolidatesAndSortsClusters(t *testing.T) {
+	findings := prefixClusterFindings("pkg", []string{"beta_c.go", "alpha_c.go", "beta_a.go", "alpha_b.go", "beta_b.go", "alpha_a.go", "beta_d.go", "tiny_a.go"})
+	if len(findings) != 1 {
+		t.Fatalf("expected one directory finding, got %+v", findings)
+	}
+	clusters := findings[0].Evidence["clusters"].([]prefixCluster)
+	if len(clusters) != 2 || clusters[0].Prefix != "beta" || clusters[0].Count != 4 || clusters[1].Prefix != "alpha" || clusters[0].Files[0] != "beta_a.go" {
+		t.Fatalf("unexpected clusters: %+v", clusters)
+	}
+	if findings[0].Location != "pkg" || findings[0].Severity != audit.SevLow {
+		t.Fatalf("unstable suppression location/severity: %+v", findings[0])
+	}
+}
+
+func TestG9SortsEqualClustersByPrefix(t *testing.T) {
+	findings := prefixClusterFindings("pkg", []string{"zz_c.go", "aa_c.go", "zz_b.go", "aa_b.go", "zz_a.go", "aa_a.go"})
+	clusters := findings[0].Evidence["clusters"].([]prefixCluster)
+	if clusters[0].Prefix != "aa" || clusters[1].Prefix != "zz" {
+		t.Fatalf("unstable order: %+v", clusters)
+	}
+}

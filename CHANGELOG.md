@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- G9 now emits one finding per directory. **JSON shape change:**
+  `evidence.prefix` and `evidence.files` become `evidence.clusters`, an array
+  of `{prefix, files, count}` sorted by descending count then prefix. (#53)
+
 - Update Cobra and pflag to their latest stable releases and golangci-lint
   to v2.15.0 for Go 1.27 support.
 
