@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- G11 now reports generic package names with authored export and production
+  importer counts; `evidence.kind` distinguishes package and file findings.
+  Cohesive `models`/`types` names and generated/test-helper packages stay exempt. (#52)
+
 - G17 Fat Main and `lagotto mains`: LOW boundary reviews for large main
   packages with many helper functions or types with methods. (#51)
 

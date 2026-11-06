@@ -160,7 +160,7 @@ keep strict dependency boundaries in a tool such as depguard.
 | G8  | Internal Re-Export Tunnel | ≥50% of exports tunnel to one deeper package, excluding public facades over `internal`       |
 | G9  | Prefix Cluster            | 3+ files share a ≥2-character name prefix in a flat directory                                |
 | G10 | Shadow Suffix             | File names ending in `_helpers`, `_utils`, `_handlers`, `_actions`, `_responses`             |
-| G11 | Generic Filename          | Generic filename weighted by its top-level declaration count and physical line count         |
+| G11 | Generic File or Package Name | Generic filenames and package names, weighted by declaration size or production reuse |
 | G12 | Premature Package         | A one-source-file package without shared-test or repeated production reuse                   |
 | G13 | Large Cohesive File       | A 1200+ line cohesive file worth a LOW navigation or layer-policy review                     |
 | G14 | Cross-Layer Orchestration | A configured layer coordinates too many services/stores while mapping generated boundary types |

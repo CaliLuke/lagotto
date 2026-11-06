@@ -24,7 +24,7 @@ import (
 // directories to import paths for G12 production-reuse evidence.
 func ScanFS(root string, pkgs []*packages.Package, exclude []string) []audit.Finding {
 	dirs := collectPackageDirs(root, pkgs, exclude)
-	var findings []audit.Finding
+	findings := ScanGenericPackages(root, pkgs, dirs)
 	for _, d := range sortedKeys(dirs) {
 		contents := dirs[d]
 		files := contents.files
@@ -382,6 +382,7 @@ func junkDrawerFindings(dir string, files []string, statsByFile ...map[string]so
 		Location: dir,
 		Message:  message,
 		Evidence: map[string]any{
+			"kind":  "file",
 			"files": evidenceFiles,
 			"dir":   dir,
 		},

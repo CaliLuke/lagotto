@@ -1,4 +1,4 @@
-# G11 — Generic Filename
+# G11 — Generic File or Package Name
 
 A file is named with a generic word: `helpers.go`,
 `utils.go`, `common.go`, `misc.go`, `shared.go`, `lib.go`. The name
@@ -76,3 +76,23 @@ cleaner, that remains an option, not a requirement.
   with a content prefix attached (`auth_helpers.go`).
 - [G5 Disconnected File Concerns](g5-mixed-concern-file.md): a separate
   cohesion signal for substantial disconnected clusters in 600+ line files.
+
+## Package names
+
+G11 also examines the loaded package name, not the directory name. It reports
+`util`, `utils`, `common`, `helper`, `helpers`, `misc`, `shared`, `base` and `lib`.
+We retain G11 because both variants describe an uninformative name; existing
+G11 suppressions continue to work. `evidence.kind` distinguishes `file` from
+`package`. Both findings use the directory as their location.
+
+Package findings are LOW unless there are at least ten authored exported
+identifiers (package declarations and declared methods) and three production
+importers, when they become MEDIUM accumulation risks. Evidence records the
+package path/name, authored file count, exported identifier count, importer
+count and importer paths. Files selected by the current build supply the typed
+exports; the filesystem pass supplies production reuse across build tags.
+
+Generated-only packages and test helpers are excluded. `models` and `types`
+are deliberately not reported: they can accurately describe cohesive schemas
+or DTOs, and this naming-only detector cannot establish their lack of cohesion.
+A directory named `utils` declaring `package encoding` is also not a match.
