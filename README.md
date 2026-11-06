@@ -165,6 +165,7 @@ keep strict dependency boundaries in a tool such as depguard.
 | G13 | Large Cohesive File       | A 1200+ line cohesive file worth a LOW navigation or layer-policy review                     |
 | G14 | Cross-Layer Orchestration | A configured layer coordinates too many services/stores while mapping generated boundary types |
 | G15 | Materialized Result Pipeline | A complete `[]map[string]any` result set is transformed into a second typed slice             |
+| G16 | Disconnected Package Concerns | Substantial prefix groups with narrow, acyclic file dependency boundaries |
 
 ## The headline detector: Receiver Monolith and its disguises
 

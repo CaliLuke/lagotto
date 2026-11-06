@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- G16 Disconnected Package Concerns and `lagotto packages`: structural boundary
+  evidence for substantial file-prefix groups; full audits remove the matching
+  G9 prefixes to avoid duplicate reports. (#50)
+
 ### Changed
 
 - G9 now emits one finding per directory. **JSON shape change:**
