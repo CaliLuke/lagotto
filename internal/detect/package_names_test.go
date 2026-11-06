@@ -1,6 +1,8 @@
 package detect
 
 import (
+	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/CaliLuke/lagotto/internal/audit"
@@ -51,5 +53,38 @@ func TestGenericPackageExcludesGeneratedExportsAndTestImporters(t *testing.T) {
 	findings := ScanGenericPackages(root, pkgs, collectPackageDirs(root, pkgs, nil))
 	if len(findings) != 1 || findings[0].Evidence["exported_identifier_count"] != 1 || findings[0].Evidence["importer_count"] != 0 {
 		t.Fatalf("incorrect authored counts: %+v", findings)
+	}
+}
+
+func TestGenericPackageRelativeRootKeepsSuppressionLocation(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{"utils/value.go": "package utils\nconst Value=1"})
+	t.Chdir(pkgs[0].Module.Dir)
+	findings := ScanFS(".", pkgs, nil)
+	kept, suppressed, err := audit.ApplySuppressions(findings, []string{"G11@utils"})
+	if err != nil || suppressed != 1 || containsID(kept, "G11") {
+		t.Fatalf("relative-root suppression failed: %v, %d, %+v", err, suppressed, kept)
+	}
+}
+
+func TestGenericPackageCountsAuthoredCgoExports(t *testing.T) {
+	enabled, err := exec.Command("go", "env", "CGO_ENABLED").Output()
+	if err != nil || strings.TrimSpace(string(enabled)) != "1" {
+		t.Skip("cgo is unavailable")
+	}
+	pkgs := fakeModule(t, map[string]string{
+		"utils/value.go": "package utils\nimport \"C\"\nconst ( A=1; B=2; C=3; D=4; E=5; F=6; G=7; H=8; I=9; J=10 )\nfunc Value() int { return int(C.int(0)) }",
+		"one/one.go":     "package one\nimport \"example.com/test/utils\"\nvar Value=utils.A",
+		"two/two.go":     "package two\nimport \"example.com/test/utils\"\nvar Value=utils.A",
+		"three/three.go": "package three\nimport \"example.com/test/utils\"\nvar Value=utils.A",
+	})
+	for _, pkg := range pkgs {
+		if len(pkg.Errors) > 0 {
+			t.Fatalf("fixture failed to load: %v", pkg.Errors)
+		}
+	}
+	root := pkgs[0].Module.Dir
+	findings := ScanGenericPackages(root, pkgs, collectPackageDirs(root, pkgs, nil))
+	if len(findings) != 1 || findings[0].Evidence["exported_identifier_count"] != 11 || findings[0].Severity != audit.SevMedium {
+		t.Fatalf("lost authored cgo exports: %+v", findings)
 	}
 }

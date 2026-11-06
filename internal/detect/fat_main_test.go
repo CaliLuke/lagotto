@@ -57,3 +57,10 @@ func TestFatMainExemptionsAndStructuralFloor(t *testing.T) {
 		})
 	}
 }
+
+func TestFatMainModuleNameDoesNotExemptProductionCode(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{"go.mod": "module example.com/examples/tool\ngo 1.26\n", "main.go": fatMainSource(15)})
+	if got := ScanFatMains(pkgs); len(got) != 1 {
+		t.Fatalf("module path incorrectly exempted production main: %+v", got)
+	}
+}

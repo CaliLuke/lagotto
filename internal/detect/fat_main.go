@@ -25,7 +25,7 @@ type mainHotspot struct {
 func ScanFatMains(pkgs []*packages.Package) []audit.Finding {
 	var findings []audit.Finding
 	for _, pkg := range pkgs {
-		if pkg == nil || pkg.Name != "main" || pkg.Fset == nil || skipMainPath(pkg.PkgPath) {
+		if pkg == nil || pkg.Name != "main" || pkg.Fset == nil || (isTestPackage(pkg.PkgPath) || skipMainPath(packageLocation(pkg))) {
 			continue
 		}
 		lines, files, functions := 0, 0, 0

@@ -44,7 +44,7 @@ func ScanGenericPackages(root string, pkgs []*packages.Package, dirs map[string]
 		if pkg.Fset != nil {
 			for _, name := range pkg.Types.Scope().Names() {
 				obj := pkg.Types.Scope().Lookup(name)
-				if obj.Exported() && authored[filepath.Base(pkg.Fset.PositionFor(obj.Pos(), false).Filename)] {
+				if obj.Exported() && authored[filepath.Base(pkg.Fset.Position(obj.Pos()).Filename)] {
 					exports++
 				}
 			}
@@ -60,7 +60,7 @@ func ScanGenericPackages(root string, pkgs []*packages.Package, dirs map[string]
 				}
 				for i := 0; i < named.NumMethods(); i++ {
 					method := named.Method(i)
-					if method.Exported() && authored[filepath.Base(pkg.Fset.PositionFor(method.Pos(), false).Filename)] {
+					if method.Exported() && authored[filepath.Base(pkg.Fset.Position(method.Pos()).Filename)] {
 						exports++
 					}
 				}

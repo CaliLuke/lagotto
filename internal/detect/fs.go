@@ -418,7 +418,12 @@ func prematurePackageFindings(root, dir, location string, contents packageDirCon
 }
 
 func filesystemLocation(root, dir string) string {
-	rel, err := filepath.Rel(root, dir)
+	absoluteRoot, rootErr := filepath.Abs(root)
+	absoluteDir, dirErr := filepath.Abs(dir)
+	if rootErr != nil || dirErr != nil {
+		return filepath.ToSlash(dir)
+	}
+	rel, err := filepath.Rel(absoluteRoot, absoluteDir)
 	if err != nil {
 		return filepath.ToSlash(dir)
 	}

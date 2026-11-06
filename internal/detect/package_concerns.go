@@ -72,7 +72,7 @@ func buildPackageFileGraph(pkg *packages.Package) packageFileGraph {
 		filename := syntaxFilename(pkg, i, file)
 		base := filepath.Base(filename)
 		allFiles[base] = true
-		if !skipSourceFile(filename, file) {
+		if !skipSourceFile(filename, file) && hasNonImportDeclaration(file) {
 			graph.lines[base] = physicalLineCount(pkg.Fset, file)
 		}
 	}
@@ -234,4 +234,13 @@ func removeCoveredPrefixClusters(root string, findings []audit.Finding) []audit.
 		result = append(result, prefixClusterReport(finding.Location, remaining)...)
 	}
 	return result
+}
+
+func hasNonImportDeclaration(file *ast.File) bool {
+	for _, decl := range file.Decls {
+		if gen, ok := decl.(*ast.GenDecl); !ok || gen.Tok != token.IMPORT {
+			return true
+		}
+	}
+	return false
 }

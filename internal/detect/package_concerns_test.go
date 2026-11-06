@@ -101,3 +101,31 @@ func TestPackageConcernsReplaceOnlyCoveredG9Prefixes(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPackageConcernsDocumentationDoesNotCreateAnotherConcern(t *testing.T) {
+	files := packageConcernFixture()
+	delete(files, "pkg/core.go")
+	delete(files, "pkg/runner.go")
+	files["pkg/doc.go"] = "// Package pkg is one cohesive component.\npackage pkg\n"
+	for path, source := range files {
+		files[path] = strings.ReplaceAll(strings.ReplaceAll(source, "c Core", ""), "(c)", "()")
+	}
+	if got := ScanPackageConcerns(fakeModule(t, files)); len(got) != 0 {
+		t.Fatalf("documentation creates false subset: %+v", got)
+	}
+}
+
+func TestPackageConcernsRemoveOverlapForRelativeRoot(t *testing.T) {
+	pkgs := fakeModule(t, packageConcernFixture())
+	t.Chdir(pkgs[0].Module.Dir)
+	groups := ScanPackageConcerns(pkgs)
+	g9 := prefixClusterFindings("pkg", []string{"lang_parse.go", "lang_resolve.go", "lang_emit.go"})
+	if got := removeCoveredPrefixClusters(".", append(g9, groups...)); len(got) != 1 || got[0].SmellID != "G16" {
+		t.Fatalf("relative root overlap: %+v", got)
+	}
+	t.Chdir("pkg")
+	g9 = prefixClusterFindings(".", []string{"lang_parse.go", "lang_resolve.go", "lang_emit.go"})
+	if got := removeCoveredPrefixClusters(".", append(g9, groups...)); len(got) != 1 || got[0].SmellID != "G16" {
+		t.Fatalf("relative subroot overlap: %+v", got)
+	}
+}
