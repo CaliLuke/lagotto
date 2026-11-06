@@ -62,6 +62,10 @@ lagotto layers .
 
 # Review materialized raw-result pipelines
 lagotto results .
+
+# Review package boundaries and logic-heavy entry points
+lagotto packages .
+lagotto mains .
 ```
 
 JSON output is the default contract for tooling. Each finding has
@@ -160,11 +164,13 @@ keep strict dependency boundaries in a tool such as depguard.
 | G8  | Internal Re-Export Tunnel | ≥50% of exports tunnel to one deeper package, excluding public facades over `internal`       |
 | G9  | Prefix Cluster            | 3+ files share a ≥2-character name prefix in a flat directory                                |
 | G10 | Shadow Suffix             | File names ending in `_helpers`, `_utils`, `_handlers`, `_actions`, `_responses`             |
-| G11 | Generic Filename          | Generic filename weighted by its top-level declaration count and physical line count         |
+| G11 | Generic File or Package Name | Generic filenames and package names, weighted by declaration size or production reuse |
 | G12 | Premature Package         | A one-source-file package without shared-test or repeated production reuse                   |
 | G13 | Large Cohesive File       | A 1200+ line cohesive file worth a LOW navigation or layer-policy review                     |
 | G14 | Cross-Layer Orchestration | A configured layer coordinates too many services/stores while mapping generated boundary types |
 | G15 | Materialized Result Pipeline | A complete `[]map[string]any` result set is transformed into a second typed slice             |
+| G16 | Disconnected Package Concerns | Substantial prefix groups with narrow, acyclic file dependency boundaries |
+| G17 | Fat Main | A 1000+ line main package with at least 3 types with methods or 15 helper functions |
 
 ## The headline detector: Receiver Monolith and its disguises
 
@@ -314,16 +320,19 @@ batches to keep peak memory proportional to a slice of the module.
 - **MEDIUM** — Receiver Monolith without demonstrated cross-package coupling;
   Foreign Holder; Stutter Names; Build-Tag Pair Sprawl; Disconnected File
   Concerns; Internal Re-Export Tunnel; a generic filename with ≥10 declarations
-  over ≥200 lines; Cross-Layer Orchestration by default (repository-configurable).
-- **LOW** — Prefix Cluster; Premature Package; Large Cohesive File; Shadow
-  Suffix; Init Coupling; Generic Filename.
+  over ≥200 lines; a generic package name with ≥10 authored exported identifiers
+  and ≥3 production importers; Cross-Layer Orchestration by default (repository-configurable).
+- **LOW** — Disconnected Package Concerns; Fat Main; Prefix Cluster; Premature Package; Large Cohesive File; Shadow
+  Suffix; Init Coupling; generic filenames or package names below their
+  accumulation-risk thresholds.
 
 ## What lagotto does NOT flag
 
 - A `Conn` struct with many low-level methods at one abstraction level
   (`Read`, `Write`, `Close`...). Method count alone isn't the smell;
   spanning ≥3 distinct concerns is.
-- `package main` with many files — entry-point packages are exempt.
+- `package main` with many files alone — G17 requires both size and structural
+  evidence of logic beyond wiring; small commands remain exempt.
 - Test doubles (`Fake*`, `Mock*`, `Stub*`, `Spy*`) and `testutil`
   packages, which legitimately implement wide interfaces.
 - Generated files carrying the standard `// Code generated ... DO NOT EDIT.`

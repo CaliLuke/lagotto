@@ -14,13 +14,9 @@ import (
 // ScanFacades inspects every method body to find thin pass-throughs
 // to a function in a different package.
 //
-// A method is a facade when:
-//   - Its body has 1 statement that is a ReturnStmt or ExprStmt with
-//     a single CallExpr, and the callee resolves to a function in a
-//     different package.
-//   - Or its body has 2-3 statements where all but the final return
-//     are trivial guards/assignments and the final statement is the
-//     above pattern.
+// A candidate has exactly one statement calling a function in another
+// package, forwarding every parameter unchanged and in order. Receiver state,
+// constants, argument transformations and guards all add behavior.
 //
 // Methods on types that embed an interface in another package are
 // flagged with reduced severity (interface-dispatch facades may be
@@ -47,60 +43,51 @@ func ScanFacades(pkgs []*packages.Package) []audit.Finding {
 				if isStandardContractMethod(pkg, fn) {
 					continue
 				}
-				if implementsNamedPackageInterface(pkg, fn) {
+				if !isFacade(pkg, fn) || implementsNamedPackageInterface(pkg, fn) {
 					continue
 				}
-				if isFacade(pkg, fn) {
-					recv := receiverTypeName(pkg.TypesInfo, fn.Recv.List[0])
-					target := delegateTarget(pkg, fn)
-					sev := audit.SevMedium
-					suggestion := "Delete the facade method. Update callers to invoke the subpackage function directly. If the receiver type is part of an interface contract that callers depend on, narrow that interface or split it; do not retain the facade."
-					classification := "pure_pass_through"
-					if receiverEmbedsExternalInterface(pkg, recv) {
-						sev = audit.SevLow
-						classification = "interface_dispatch"
-						suggestion = "This receiver embeds an external interface, so the method may be a load-bearing adapter. Keep it if callers rely on that interface contract; otherwise remove the pass-through and call the underlying package directly."
-					} else if callUsesReceiverState(fn) {
-						sev = audit.SevLow
-						classification = "state_binding"
-						suggestion = "This method binds receiver state into the delegated call. Keep it if that state is intentionally encapsulated; otherwise expose a narrower underlying type or move the behavior to the package that owns the state."
-					} else if isStandardLibraryTarget(target) {
-						sev = audit.SevLow
-						classification = "stdlib_boundary"
-						suggestion = "This is a small standard-library boundary and may be an intentional test seam. Keep it when it provides a stable contract; otherwise call the standard-library function directly."
-					}
-					findings = append(findings, audit.Finding{
-						Smell:    "Facade Method",
-						SmellID:  "G6",
-						Severity: sev,
-						Location: fmt.Sprintf("%s:%s.%s", sourceLocation(pkg, fname), recv, fn.Name.Name),
-						Message: fmt.Sprintf("Method (%s).%s in %s is a thin pass-through to a function in another package.",
-							recv, fn.Name.Name, sourceLocation(pkg, fname)),
-						Evidence: map[string]any{
-							"file":           fname,
-							"receiver":       recv,
-							"method":         fn.Name.Name,
-							"body_stmts":     len(fn.Body.List),
-							"delegates_to":   target,
-							"classification": classification,
-							"package":        pkg.PkgPath,
-							"is_unexported":  !fn.Name.IsExported(),
-						},
-						Suggestion: suggestion,
-					})
+				recv := receiverTypeName(pkg.TypesInfo, fn.Recv.List[0])
+				target := delegateTarget(pkg, fn)
+				sev := audit.SevMedium
+				suggestion := "Delete the facade method. Update callers to invoke the subpackage function directly. If the receiver type is part of an interface contract that callers depend on, narrow that interface or split it; do not retain the facade."
+				classification := "pure_pass_through"
+				if receiverEmbedsExternalInterface(pkg, recv) {
+					sev = audit.SevLow
+					classification = "interface_dispatch"
+					suggestion = "This receiver embeds an external interface, so the method may be a load-bearing adapter. Keep it if callers rely on that interface contract; otherwise remove the pass-through and call the underlying package directly."
+				} else if isStandardLibraryTarget(target) {
+					sev = audit.SevLow
+					classification = "stdlib_boundary"
+					suggestion = "This is a small standard-library boundary and may be an intentional test seam. Keep it when it provides a stable contract; otherwise call the standard-library function directly."
 				}
+				findings = append(findings, audit.Finding{
+					Smell:    "Facade Method",
+					SmellID:  "G6",
+					Severity: sev,
+					Location: fmt.Sprintf("%s:%s.%s", sourceLocation(pkg, fname), recv, fn.Name.Name),
+					Message: fmt.Sprintf("Method (%s).%s in %s is a thin pass-through to a function in another package.",
+						recv, fn.Name.Name, sourceLocation(pkg, fname)),
+					Evidence: map[string]any{
+						"file":           fname,
+						"receiver":       recv,
+						"method":         fn.Name.Name,
+						"body_stmts":     len(fn.Body.List),
+						"delegates_to":   target,
+						"classification": classification,
+						"package":        pkg.PkgPath,
+						"is_unexported":  !fn.Name.IsExported(),
+					},
+					Suggestion: suggestion,
+				})
 			}
 		}
 	}
 	return findings
 }
 
-// implementsNamedPackageInterface reports whether fn is part of a named
-// interface contract declared by the package. Go implementations are
-// structural, so there is no explicit declaration to inspect: the receiver
-// must implement the complete interface and the interface must contain this
-// method. In that case a concise cross-package call is an implementation of
-// the contract, not evidence that the method itself is redundant.
+// implementsNamedPackageInterface preserves named contracts in the current
+// package and its direct imports. Structural implementations need concise
+// methods too; their contract is evidence that the wrapper is required.
 func implementsNamedPackageInterface(pkg *packages.Package, fn *ast.FuncDecl) bool {
 	if pkg.Types == nil || pkg.TypesInfo == nil {
 		return false
@@ -114,26 +101,30 @@ func implementsNamedPackageInterface(pkg *packages.Package, fn *ast.FuncDecl) bo
 		return false
 	}
 	receiver := sig.Recv().Type()
-	scope := pkg.Types.Scope()
-	for _, name := range scope.Names() {
-		typeName, ok := scope.Lookup(name).(*types.TypeName)
-		if !ok || typeName.IsAlias() {
-			continue
-		}
-		named, ok := typeName.Type().(*types.Named)
-		if !ok {
-			continue
-		}
-		iface, ok := named.Underlying().(*types.Interface)
-		if !ok {
-			continue
-		}
-		iface.Complete()
-		if !iface.IsMethodSet() || !interfaceContainsMethod(iface, fn.Name.Name) {
-			continue
-		}
-		if types.Implements(receiver, iface) {
-			return true
+	contracts := []*types.Package{pkg.Types}
+	contracts = append(contracts, pkg.Types.Imports()...)
+	for _, contract := range contracts {
+		scope := contract.Scope()
+		for _, name := range scope.Names() {
+			typeName, ok := scope.Lookup(name).(*types.TypeName)
+			if !ok || typeName.IsAlias() {
+				continue
+			}
+			named, ok := typeName.Type().(*types.Named)
+			if !ok {
+				continue
+			}
+			iface, ok := named.Underlying().(*types.Interface)
+			if !ok {
+				continue
+			}
+			iface.Complete()
+			if !iface.IsMethodSet() || !interfaceContainsMethod(iface, fn.Name.Name) {
+				continue
+			}
+			if types.Implements(receiver, iface) || receiverPointerImplements(receiver, iface) {
+				return true
+			}
 		}
 	}
 	return false
@@ -180,35 +171,34 @@ func isStandardContractMethod(pkg *packages.Package, fn *ast.FuncDecl) bool {
 	}
 }
 
-// isFacade reports whether fn's body is a thin pass-through to a
-// function in another package — at most 3 statements ending in a
-// single cross-package call, with any prefix statements limited to
-// trivial setup (assignment, nil-guard, declaration).
+// isFacade requires actual argument forwarding; line count alone cannot
+// distinguish a wrapper from a small implementation of useful behavior.
 func isFacade(pkg *packages.Package, fn *ast.FuncDecl) bool {
-	if fn.Body == nil {
-		return false
-	}
-	stmts := fn.Body.List
-	if len(stmts) == 0 || len(stmts) > 3 {
+	if fn.Body == nil || len(fn.Body.List) != 1 || pkg.TypesInfo == nil {
 		return false
 	}
 	if pkg.Fset == nil || pkg.Fset.Position(fn.Body.Rbrace).Line-pkg.Fset.Position(fn.Body.Lbrace).Line+1 > 3 {
 		return false
 	}
-	last := stmts[len(stmts)-1]
-	call := extractDelegateCall(last)
+	call := extractDelegateCall(fn.Body.List[0])
 	if call == nil {
 		return false
 	}
 	target := callTargetPackage(pkg, call)
-	if target == "" {
+	if target == "" || target == pkg.PkgPath {
 		return false
 	}
-	if target == pkg.PkgPath {
+	method, ok := pkg.TypesInfo.Defs[fn.Name].(*types.Func)
+	if !ok {
 		return false
 	}
-	for _, s := range stmts[:len(stmts)-1] {
-		if !isTrivialPrefix(s) {
+	sig, ok := method.Type().(*types.Signature)
+	if !ok || len(call.Args) != sig.Params().Len() || call.Ellipsis.IsValid() != sig.Variadic() {
+		return false
+	}
+	for i, arg := range call.Args {
+		id, ok := arg.(*ast.Ident)
+		if !ok || pkg.TypesInfo.Uses[id] != sig.Params().At(i) {
 			return false
 		}
 	}
@@ -278,46 +268,6 @@ func delegateTarget(pkg *packages.Package, fn *ast.FuncDecl) string {
 	return target
 }
 
-// isTrivialPrefix reports whether a leading body statement is simple
-// enough to ignore for facade detection (a guard or simple binding).
-// A loop or switch disqualifies the method from being a facade.
-func isTrivialPrefix(s ast.Stmt) bool {
-	switch s.(type) {
-	case *ast.AssignStmt, *ast.IfStmt, *ast.DeclStmt:
-		return true
-	}
-	return false
-}
-
-func callUsesReceiverState(fn *ast.FuncDecl) bool {
-	if fn.Body == nil || len(fn.Body.List) == 0 || fn.Recv == nil || len(fn.Recv.List) == 0 || len(fn.Recv.List[0].Names) == 0 {
-		return false
-	}
-	recvName := fn.Recv.List[0].Names[0].Name
-	call := extractDelegateCall(fn.Body.List[len(fn.Body.List)-1])
-	if call == nil {
-		return false
-	}
-	for _, arg := range call.Args {
-		usesState := false
-		ast.Inspect(arg, func(n ast.Node) bool {
-			sel, ok := n.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			if id, ok := sel.X.(*ast.Ident); ok && id.Name == recvName {
-				usesState = true
-				return false
-			}
-			return true
-		})
-		if usesState {
-			return true
-		}
-	}
-	return false
-}
-
 func receiverEmbedsExternalInterface(pkg *packages.Package, recvName string) bool {
 	if pkg.Types == nil {
 		return false
@@ -360,4 +310,11 @@ func isStandardLibraryTarget(target string) bool {
 	}
 	pkgPath := target[:i]
 	return pkgPath != "" && !strings.Contains(pkgPath, ".")
+}
+
+func receiverPointerImplements(receiver types.Type, iface *types.Interface) bool {
+	if _, ok := receiver.(*types.Pointer); ok {
+		return false
+	}
+	return types.Implements(types.NewPointer(receiver), iface)
 }

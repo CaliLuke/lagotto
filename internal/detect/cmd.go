@@ -164,6 +164,8 @@ func runAuditScan(f *Flags, args []string) error {
 			return err
 		}
 		loadErrs = appendUnique(loadErrs, batchErrs...)
+		findings = append(findings, ScanFatMains(pkgs)...)
+		findings = append(findings, ScanPackageConcerns(pkgs)...)
 		findings = append(findings, ScanStutter(pkgs)...)
 		findings = append(findings, ScanFacades(pkgs)...)
 		findings = append(findings, ScanDepsBag(pkgs)...)
@@ -173,7 +175,7 @@ func runAuditScan(f *Flags, args []string) error {
 		findings = append(findings, ScanLayerPolicy(pkgs, f.LayerPolicy)...)
 		findings = append(findings, ScanMaterializedResultPipelines(pkgs)...)
 	}
-	return emitScanReport(f, root, loadErrs, findings)
+	return emitScanReport(f, root, loadErrs, removeCoveredPrefixClusters(root, findings))
 }
 
 func layerPolicyReportConfiguration(rules []LayerPolicyRule) []audit.LayerPolicyConfiguration {
@@ -399,6 +401,24 @@ func FSCmd(f *Flags) *cobra.Command {
 			return runScan(f, args, func(root string, pkgs []*packages.Package) []audit.Finding {
 				return ScanFS(root, pkgs, f.Exclude)
 			})
+		},
+	}
+}
+
+// PackagesCmd returns the packages subcommand for G16.
+func PackagesCmd(f *Flags) *cobra.Command {
+	return &cobra.Command{Use: "packages [path]", Short: "Find substantial file groups with narrow dependency boundaries.", Args: cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding { return ScanPackageConcerns(pkgs) })
+		},
+	}
+}
+
+// MainsCmd returns the mains subcommand for G17.
+func MainsCmd(f *Flags) *cobra.Command {
+	return &cobra.Command{Use: "mains [path]", Short: "Find logic-heavy main packages.", Args: cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runScan(f, args, func(_ string, pkgs []*packages.Package) []audit.Finding { return ScanFatMains(pkgs) })
 		},
 	}
 }

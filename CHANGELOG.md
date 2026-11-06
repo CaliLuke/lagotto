@@ -7,7 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-05
+
+### Added
+
+- G11 now reports generic package names with authored export and production
+  importer counts; `evidence.kind` distinguishes package and file findings.
+  Cohesive `base`/`models`/`types` names and generated/test-helper packages stay exempt. (#52)
+
+- G17 Fat Main and `lagotto mains`: LOW boundary reviews for large main
+  packages with many helper functions or types with methods. (#51)
+
+- G16 Disconnected Package Concerns and `lagotto packages`: structural boundary
+  evidence for substantial file-prefix groups; full audits remove the matching
+  G9 prefixes to avoid duplicate reports. (#50)
+
+### Changed
+
+- G9 now emits one finding per directory. **JSON shape change:**
+  `evidence.prefix` and `evidence.files` become `evidence.clusters`, an array
+  of `{prefix, files, count}` sorted by descending count then prefix. (#53)
+
+- Update Cobra and pflag to their latest stable releases and golangci-lint
+  to v2.15.0 for Go 1.27 support.
+
 ### Fixed
+
+- G11 counts explicit interface methods and ignores inactive build-tagged
+  `testing` imports when deciding whether a package is a test helper.
+
+- Preserve module-relative detector locations for relative audit roots,
+  count authored cgo exports correctly, and keep documentation-only files
+  from creating a false package boundary.
+- G6 recognizes directly imported interface contracts; G11 excludes `base`
+  after corpus review found intentional framework/schema boundaries. G16
+  rejects a whole implementation together with its supporting dependencies.
+
+- G6 requires unchanged parameter forwarding. Receiver binding, formatting,
+  conversion, constants, nested calls and short guards no longer masquerade as
+  pure pass-throughs. A 40-finding public-code sample found no true positives
+  under the former rule; see [the release corpus report](docs/validation/v0.3.0-corpus.md). (#55)
+
+- Load Go 1.27 export data with `golang.org/x/tools v0.52.0`. Release binaries
+  now use Go 1.27, and CI covers Go 1.26 and Go 1.27. (#58)
 
 - `--suppress SMELL_ID@LOCATION` now matches whole location components.
   `G5@cmd/server` suppresses `cmd/server/main.go` and `cmd/server (Server)`
@@ -257,7 +299,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Goreleaser configuration with multi-arch darwin/linux builds and
   Homebrew tap publish.
 
-[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.2.7...HEAD
+[Unreleased]: https://github.com/CaliLuke/lagotto/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/CaliLuke/lagotto/compare/v0.2.7...v0.3.0
 [0.2.7]: https://github.com/CaliLuke/lagotto/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/CaliLuke/lagotto/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/CaliLuke/lagotto/compare/v0.2.4...v0.2.5

@@ -24,7 +24,7 @@ import (
 // directories to import paths for G12 production-reuse evidence.
 func ScanFS(root string, pkgs []*packages.Package, exclude []string) []audit.Finding {
 	dirs := collectPackageDirs(root, pkgs, exclude)
-	var findings []audit.Finding
+	findings := ScanGenericPackages(root, pkgs, dirs)
 	for _, d := range sortedKeys(dirs) {
 		contents := dirs[d]
 		files := contents.files
@@ -214,44 +214,54 @@ func hasBuildConstraint(file *ast.File) bool {
 // share a leading name segment up to the first separator (`_`, `-`,
 // `.`). The cluster typically wants to be a subpackage.
 func prefixClusterFindings(dir string, files []string) []audit.Finding {
-	type entry struct{ files []string }
-	clusters := map[string]*entry{}
-	for _, f := range files {
-		base := strings.TrimSuffix(f, ".go")
+	return prefixClusterReport(dir, collectPrefixClusters(files))
+}
+
+type prefixCluster struct {
+	Prefix string   `json:"prefix"`
+	Files  []string `json:"files"`
+	Count  int      `json:"count"`
+}
+
+func collectPrefixClusters(files []string) []prefixCluster {
+	groups := map[string][]string{}
+	for _, file := range files {
+		base := strings.TrimSuffix(file, ".go")
 		idx := strings.IndexAny(base, "_-.")
 		if idx < 2 || hasPlatformSuffix(base) {
 			continue
 		}
-		prefix := base[:idx]
-		c, ok := clusters[prefix]
-		if !ok {
-			c = &entry{}
-			clusters[prefix] = c
-		}
-		c.files = append(c.files, f)
+		groups[base[:idx]] = append(groups[base[:idx]], file)
 	}
-	var findings []audit.Finding
-	for _, prefix := range sortedKeys(clusters) {
-		c := clusters[prefix]
-		if len(c.files) < 3 {
-			continue
+	var clusters []prefixCluster
+	for prefix, members := range groups {
+		if len(members) >= 3 {
+			clusters = append(clusters, prefixCluster{Prefix: prefix, Files: sortedCopy(members), Count: len(members)})
 		}
-		findings = append(findings, audit.Finding{
-			Smell:    "Prefix Cluster",
-			SmellID:  "G9",
-			Severity: audit.SevLow,
-			Location: dir,
-			Message: fmt.Sprintf("%d files share prefix %q in %s.",
-				len(c.files), prefix, dir),
-			Evidence: map[string]any{
-				"prefix": prefix,
-				"files":  c.files,
-				"dir":    dir,
-			},
-			Suggestion: "A shared prefix may be healthy organization. Promote the cluster to a subpackage only if it forms an independently changing component with a useful boundary; otherwise keep it or rename files when clearer content names exist.",
-		})
 	}
-	return findings
+	sort.Slice(clusters, func(i, j int) bool {
+		if clusters[i].Count != clusters[j].Count {
+			return clusters[i].Count > clusters[j].Count
+		}
+		return clusters[i].Prefix < clusters[j].Prefix
+	})
+	return clusters
+}
+
+func prefixClusterReport(dir string, clusters []prefixCluster) []audit.Finding {
+	if len(clusters) == 0 {
+		return nil
+	}
+	descriptions := make([]string, 0, len(clusters))
+	for _, cluster := range clusters {
+		descriptions = append(descriptions, fmt.Sprintf("%s (%d files)", cluster.Prefix, cluster.Count))
+	}
+	return []audit.Finding{{
+		Smell: "Prefix Cluster", SmellID: "G9", Severity: audit.SevLow, Location: dir,
+		Message:    fmt.Sprintf("%d prefix clusters in %s: %s.", len(clusters), dir, strings.Join(descriptions, ", ")),
+		Evidence:   map[string]any{"clusters": clusters, "dir": dir},
+		Suggestion: "A shared prefix may be healthy organization. Promote a cluster to a subpackage only if it forms an independently changing component with a useful boundary; otherwise keep it or rename files when clearer content names exist.",
+	}}
 }
 
 var platformSuffixes = map[string]bool{
@@ -372,6 +382,7 @@ func junkDrawerFindings(dir string, files []string, statsByFile ...map[string]so
 		Location: dir,
 		Message:  message,
 		Evidence: map[string]any{
+			"kind":  "file",
 			"files": evidenceFiles,
 			"dir":   dir,
 		},
@@ -407,7 +418,12 @@ func prematurePackageFindings(root, dir, location string, contents packageDirCon
 }
 
 func filesystemLocation(root, dir string) string {
-	rel, err := filepath.Rel(root, dir)
+	absoluteRoot, rootErr := filepath.Abs(root)
+	absoluteDir, dirErr := filepath.Abs(dir)
+	if rootErr != nil || dirErr != nil {
+		return filepath.ToSlash(dir)
+	}
+	rel, err := filepath.Rel(absoluteRoot, absoluteDir)
 	if err != nil {
 		return filepath.ToSlash(dir)
 	}

@@ -23,7 +23,13 @@ where the directory listing starts feeling like a forced flat layout.
 For each directory, it groups files by the substring before the
 first `_`, `-`, or `.` separator. One-character prefixes are ignored; common
 two-character domain prefixes such as `db_` and `io_` count. Recognized GOOS
-and GOARCH suffix suites are excluded. A finding fires at 3 or more files.
+and GOARCH suffix suites are excluded. A cluster qualifies at 3 or more files.
+`lagotto fs` reports one finding per directory with all qualifying clusters.
+A full audit omits prefixes covered by G16; no G9 finding remains when G16
+covers every cluster in the directory. `evidence.clusters` contains
+`{prefix, files, count}`,
+sorted by descending count, then prefix; member files are sorted by name.
+The location remains the directory, so `G9@dir` suppressions still work.
 
 Prefix shape alone is always **LOW**. Lagotto does not infer semantic
 disconnection from filenames, even for large clusters.

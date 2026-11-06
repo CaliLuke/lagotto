@@ -24,19 +24,18 @@ generation pay the cost.
 
 ## What lagotto checks
 
-For each method declaration in the workspace, the detector checks
-whether the body spans at most three source lines and ends in a single
-cross-package call, with any prefix statements limited to trivial
-setup (assignment, nil-guard, declaration). If so, it records the
-target package and method, and emits a finding.
+For each method declaration, the detector requires one statement spanning at
+most three source lines: a cross-package function call forwarding every
+parameter unchanged, in declaration order (including variadic forwarding).
+Guards, assignments, receiver state, constants, conversions, nested calls,
+reordered or omitted arguments all disqualify the candidate. A short body can
+still implement useful behavior.
 
-Type conversions are not calls and are excluded. Methods that bind receiver
-state, dispatch through an embedded external interface, or wrap a standard
-library boundary are reported at LOW with context-aware guidance because they
-may be load-bearing adapters or test seams.
+Embedded external interface boundaries and stateless standard-library wrappers
+remain LOW review signals because they may be intentional API or testing seams.
 
-Methods required by a named interface in the same package are excluded when
-the receiver implements the complete interface. Canonical interface-contract
+Methods required by a named interface in the same package or a directly imported package are excluded when
+the receiver or its pointer implements the complete interface. Canonical interface-contract
 signatures `Error() string`, `String() string`, and `Unwrap() error` /
 `Unwrap() []error` are also excluded even when the standard interface is not
 declared locally. In both cases, a thin implementation is not evidence of a
@@ -48,7 +47,7 @@ methods that exist only to bridge a package boundary.
 | Severity | Condition                                |
 | -------- | ---------------------------------------- |
 | MEDIUM   | any thin pass-through to another package |
-| LOW      | state/interface/standard-library boundary |
+| LOW      | interface/standard-library boundary |
 
 ## Positive example (fires)
 
@@ -58,11 +57,11 @@ package typedbstore
 import "example.com/migrate"
 
 func (t *TypeDBManager) RunAllTypeDBMigrations(ctx context.Context, dryRun bool) error {
-    return migrate.Run(ctx, t.cfg, dryRun)
+    return migrate.Run(ctx, dryRun)
 }
 
 func (t *TypeDBManager) DiagnoseTypeDBMigration(ctx context.Context, name string) (*migrate.DoctorResult, error) {
-    return migrate.Diagnose(ctx, t.cfg, name)
+    return migrate.Diagnose(ctx, name)
 }
 ```
 
@@ -97,8 +96,7 @@ Also treated conservatively:
 - Methods on types that satisfy an external interface contract
   (e.g., `(c *Conn) Read(p []byte) (int, error)` that calls
   `bufio.Reader.Read`). The interface forces the method to exist;
-  removing it would break the contract. lagotto can't tell from the
-  embedded external interfaces are detected and downgraded.
+  removing it would break the contract. embedded external interfaces are detected and downgraded.
 - Methods whose body is `return fmt.Sprintf(...)` for an `Error()` or
   `String()` method, and canonical `Unwrap()` methods. Their exact
   signatures are excluded from this detector.
