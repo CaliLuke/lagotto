@@ -320,9 +320,11 @@ batches to keep peak memory proportional to a slice of the module.
 - **MEDIUM** — Receiver Monolith without demonstrated cross-package coupling;
   Foreign Holder; Stutter Names; Build-Tag Pair Sprawl; Disconnected File
   Concerns; Internal Re-Export Tunnel; a generic filename with ≥10 declarations
-  over ≥200 lines; Cross-Layer Orchestration by default (repository-configurable).
+  over ≥200 lines; a generic package name with ≥10 authored exported identifiers
+  and ≥3 production importers; Cross-Layer Orchestration by default (repository-configurable).
 - **LOW** — Disconnected Package Concerns; Fat Main; Prefix Cluster; Premature Package; Large Cohesive File; Shadow
-  Suffix; Init Coupling; Generic Filename.
+  Suffix; Init Coupling; generic filenames or package names below their
+  accumulation-risk thresholds.
 
 ## What lagotto does NOT flag
 

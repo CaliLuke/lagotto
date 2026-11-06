@@ -33,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- G11 counts explicit interface methods and ignores inactive build-tagged
+  `testing` imports when deciding whether a package is a test helper.
+
 - Preserve module-relative detector locations for relative audit roots,
   count authored cgo exports correctly, and keep documentation-only files
   from creating a false package boundary.

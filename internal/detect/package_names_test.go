@@ -89,3 +89,34 @@ func TestGenericPackageCountsAuthoredCgoExports(t *testing.T) {
 		t.Fatalf("lost authored cgo exports: %+v", findings)
 	}
 }
+
+func TestGenericPackageIgnoresInactiveTestingImport(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"utils/value.go":    "package utils\nconst Value=1",
+		"utils/tools.go":    "//go:build lagotto_test_helpers\n\npackage utils\nimport \"testing\"\nvar Helper *testing.T",
+		"helpers/active.go": "package helpers\nimport \"testing\"\nvar Helper *testing.T",
+	})
+	root := pkgs[0].Module.Dir
+	findings := ScanGenericPackages(root, pkgs, collectPackageDirs(root, pkgs, nil))
+	if len(findings) != 1 || findings[0].Location != "utils" {
+		t.Fatalf("inactive test import hid production package: %+v", findings)
+	}
+}
+
+func TestGenericPackageCountsExplicitInterfaceMethodsOnce(t *testing.T) {
+	pkgs := fakeModule(t, map[string]string{
+		"utils/value.go": `package utils
+ type Contract interface { A(); B(); C(); D(); E(); F(); G(); H(); I(); J() }
+ type Extended interface { Contract; Extra() }
+ type Alias = Contract
+ `,
+		"one/one.go":     "package one\nimport \"example.com/test/utils\"\nvar Value utils.Contract",
+		"two/two.go":     "package two\nimport \"example.com/test/utils\"\nvar Value utils.Contract",
+		"three/three.go": "package three\nimport \"example.com/test/utils\"\nvar Value utils.Contract",
+	})
+	root := pkgs[0].Module.Dir
+	findings := ScanGenericPackages(root, pkgs, collectPackageDirs(root, pkgs, nil))
+	if len(findings) != 1 || findings[0].Evidence["exported_identifier_count"] != 14 || findings[0].Severity != audit.SevMedium {
+		t.Fatalf("incorrect explicit interface count: %+v", findings)
+	}
+}

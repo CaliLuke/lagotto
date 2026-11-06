@@ -33,7 +33,8 @@ func ScanGenericPackages(root string, pkgs []*packages.Package, dirs map[string]
 				break
 			}
 		}
-		if len(contents.files) == 0 || contents.importsTesting {
+		_, importsTesting := pkg.Imports["testing"]
+		if len(contents.files) == 0 || importsTesting {
 			continue
 		}
 		authored := map[string]bool{}
@@ -57,6 +58,14 @@ func ScanGenericPackages(root string, pkgs []*packages.Package, dirs map[string]
 				named, ok := obj.Type().(*types.Named)
 				if !ok {
 					continue
+				}
+				if iface, ok := named.Underlying().(*types.Interface); ok {
+					for i := 0; i < iface.NumExplicitMethods(); i++ {
+						method := iface.ExplicitMethod(i)
+						if method.Exported() && authored[filepath.Base(pkg.Fset.Position(method.Pos()).Filename)] {
+							exports++
+						}
+					}
 				}
 				for i := 0; i < named.NumMethods(); i++ {
 					method := named.Method(i)

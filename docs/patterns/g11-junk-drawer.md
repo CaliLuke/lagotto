@@ -86,13 +86,14 @@ G11 suppressions continue to work. `evidence.kind` distinguishes `file` from
 `package`. Both findings use the directory as their location.
 
 Package findings are LOW unless there are at least ten authored exported
-identifiers (package declarations and declared methods) and three production
+identifiers (package declarations, declared concrete methods and explicit interface methods) and three production
 importers, when they become MEDIUM accumulation risks. Evidence records the
 package path/name, authored file count, exported identifier count, importer
 count and importer paths. Files selected by the current build supply the typed
 exports; the filesystem pass supplies production reuse across build tags.
 
-Generated-only packages and test helpers are excluded. `base`, `models` and `types`
+Generated-only packages and test helpers are excluded. Only imports selected
+for the active build can establish the `testing` helper exemption. `base`, `models` and `types`
 are deliberately not reported: they can accurately describe framework primitives or cohesive schemas
 or DTOs, and this naming-only detector cannot establish their lack of cohesion.
 A directory named `utils` declaring `package encoding` is also not a match.

@@ -229,7 +229,7 @@ func TestLoadStandardLibraryExportData(t *testing.T) {
 		t.Fatalf("missing loaded Ready function: %v", pkgs)
 	}
 	typed, typeErrs, err := LoadTypes(root, "", nil)
-	if err != nil || len(typeErrs) != 0 || len(typed) != 1 {
+	if err != nil || len(typeErrs) != 0 || len(typed) != 1 || typed[0].Types.Scope().Lookup("Ready") == nil {
 		t.Fatalf("LoadTypes: %v, errors: %v", err, typeErrs)
 	}
 }
